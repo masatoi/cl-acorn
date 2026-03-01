@@ -52,3 +52,75 @@
   (if more
       (reduce #'binary-sub more :initial-value arg)
       (binary-sub 0 arg)))
+
+;;; --- Multiplication ---
+
+(defgeneric binary-mul (a b)
+  (:documentation "Binary multiplication supporting dual numbers."))
+
+(defmethod binary-mul ((a dual) (b dual))
+  (let ((ar (dual-real a))
+        (ae (dual-epsilon a))
+        (br (dual-real b))
+        (be (dual-epsilon b)))
+    (make-dual (cl:* ar br)
+               (cl:+ (cl:* ar be) (cl:* ae br)))))
+
+(defmethod binary-mul ((a dual) (b number))
+  (let ((n (coerce b 'double-float)))
+    (make-dual (cl:* (dual-real a) n)
+               (cl:* (dual-epsilon a) n))))
+
+(defmethod binary-mul ((a number) (b dual))
+  (let ((n (coerce a 'double-float)))
+    (make-dual (cl:* n (dual-real b))
+               (cl:* n (dual-epsilon b)))))
+
+(defmethod binary-mul ((a number) (b number))
+  (cl:* a b))
+
+;;; --- Division ---
+
+(defgeneric binary-div (a b)
+  (:documentation "Binary division supporting dual numbers."))
+
+(defmethod binary-div ((a dual) (b dual))
+  (let ((p (dual-real a))
+        (q (dual-epsilon a))
+        (c (dual-real b))
+        (d (dual-epsilon b)))
+    (let ((c2 (cl:* c c)))
+      (make-dual (cl:/ p c)
+                 (cl:/ (cl:- (cl:* q c) (cl:* p d))
+                       c2)))))
+
+(defmethod binary-div ((a dual) (b number))
+  (let ((n (coerce b 'double-float)))
+    (make-dual (cl:/ (dual-real a) n)
+               (cl:/ (dual-epsilon a) n))))
+
+(defmethod binary-div ((a number) (b dual))
+  (let ((p (coerce a 'double-float))
+        (c (dual-real b))
+        (d (dual-epsilon b)))
+    (make-dual (cl:/ p c)
+               (cl:/ (cl:- (cl:* p d))
+                     (cl:* c c)))))
+
+(defmethod binary-div ((a number) (b number))
+  (cl:/ a b))
+
+;;; --- N-ary wrappers (mul/div) ---
+
+(defun * (&rest args)
+  "Multiplication supporting dual numbers."
+  (case (length args)
+    (0 1)
+    (1 (first args))
+    (t (reduce #'binary-mul args))))
+
+(defun / (arg &rest more)
+  "Division/reciprocal supporting dual numbers."
+  (if more
+      (reduce #'binary-div more :initial-value arg)
+      (binary-div 1 arg)))

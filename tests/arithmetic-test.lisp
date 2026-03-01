@@ -73,3 +73,72 @@
 (deftest test-sub-number-number
   (testing "5 - 3 = 2 (falls through to cl:-)"
     (ok (= (ad:- 5 3) 2))))
+
+;;; Multiplication tests
+
+(deftest test-mul-dual-dual
+  (testing "(2+3e) * (4+5e) = (8 + 22e)"
+    ;; real: 2*4=8, eps: 2*5 + 3*4 = 10+12 = 22
+    (let ((result (ad:* (ad:make-dual 2 3) (ad:make-dual 4 5))))
+      (ok (approx= (ad:dual-real result) 8.0d0))
+      (ok (approx= (ad:dual-epsilon result) 22.0d0)))))
+
+(deftest test-mul-dual-number
+  (testing "(2+3e) * 4 = (8+12e)"
+    (let ((result (ad:* (ad:make-dual 2 3) 4)))
+      (ok (approx= (ad:dual-real result) 8.0d0))
+      (ok (approx= (ad:dual-epsilon result) 12.0d0)))))
+
+(deftest test-mul-number-dual
+  (testing "4 * (2+3e) = (8+12e)"
+    (let ((result (ad:* 4 (ad:make-dual 2 3))))
+      (ok (approx= (ad:dual-real result) 8.0d0))
+      (ok (approx= (ad:dual-epsilon result) 12.0d0)))))
+
+(deftest test-mul-number-number
+  (testing "3 * 4 = 12"
+    (ok (= (ad:* 3 4) 12))))
+
+(deftest test-mul-n-ary
+  (testing "n-ary multiplication"
+    ;; (1+1e) * (2+0e) * (3+0e) = first: (2+2e), then: (6+6e)
+    (let ((result (ad:* (ad:make-dual 1 1) (ad:make-dual 2 0) (ad:make-dual 3 0))))
+      (ok (approx= (ad:dual-real result) 6.0d0))
+      (ok (approx= (ad:dual-epsilon result) 6.0d0)))))
+
+(deftest test-mul-zero-args
+  (testing "(ad:*) returns 1"
+    (ok (= (ad:*) 1))))
+
+;;; Division tests
+
+(deftest test-div-dual-dual
+  (testing "(6+4e) / (3+1e) = (2 + 2/3e)"
+    ;; real: 6/3=2, eps: (4*3 - 6*1)/9 = 6/9 = 2/3
+    (let ((result (ad:/ (ad:make-dual 6 4) (ad:make-dual 3 1))))
+      (ok (approx= (ad:dual-real result) 2.0d0))
+      (ok (approx= (ad:dual-epsilon result) (/ 2.0d0 3.0d0))))))
+
+(deftest test-div-dual-number
+  (testing "(6+4e) / 2 = (3+2e)"
+    (let ((result (ad:/ (ad:make-dual 6 4) 2)))
+      (ok (approx= (ad:dual-real result) 3.0d0))
+      (ok (approx= (ad:dual-epsilon result) 2.0d0)))))
+
+(deftest test-div-number-dual
+  (testing "1 / (2+1e) = (0.5 + -0.25e)"
+    ;; real: 1/2=0.5, eps: -(1*1)/4 = -0.25
+    (let ((result (ad:/ 1 (ad:make-dual 2 1))))
+      (ok (approx= (ad:dual-real result) 0.5d0))
+      (ok (approx= (ad:dual-epsilon result) -0.25d0)))))
+
+(deftest test-div-reciprocal
+  (testing "(ad:/ x) computes reciprocal"
+    ;; 1/(2+1e) = 0.5 - 0.25e
+    (let ((result (ad:/ (ad:make-dual 2 1))))
+      (ok (approx= (ad:dual-real result) 0.5d0))
+      (ok (approx= (ad:dual-epsilon result) -0.25d0)))))
+
+(deftest test-div-number-number
+  (testing "6 / 3 = 2"
+    (ok (= (ad:/ 6 3) 2))))

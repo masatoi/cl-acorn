@@ -70,6 +70,17 @@
       (ok (approx= (ad:dual-real result) -3.0d0))
       (ok (approx= (ad:dual-epsilon result) -5.0d0)))))
 
+(deftest test-negate-number
+  (testing "(ad:- 5) negates plain number"
+    (ok (= (ad:- 5) -5))))
+
+(deftest test-negate-derivative
+  (testing "d/dx(-x) = -1 at x=3"
+    (multiple-value-bind (val deriv)
+        (ad:derivative (lambda (x) (ad:- x)) 3.0d0)
+      (ok (approx= val -3.0d0))
+      (ok (approx= deriv -1.0d0)))))
+
 (deftest test-sub-number-number
   (testing "5 - 3 = 2 (falls through to cl:-)"
     (ok (= (ad:- 5 3) 2))))
@@ -138,6 +149,19 @@
     (let ((result (ad:/ (ad:make-dual 2 1))))
       (ok (approx= (ad:dual-real result) 0.5d0))
       (ok (approx= (ad:dual-epsilon result) -0.25d0)))))
+
+(deftest test-reciprocal-number
+  (testing "(ad:/ 5) computes reciprocal of plain number"
+    (ok (= (ad:/ 5) 1/5))))
+
+(deftest test-reciprocal-derivative
+  (testing "d/dx(1/x) = -1/x^2 at x=2"
+    ;; f(x) = 1/x, f'(x) = -1/x^2
+    ;; At x=2: f(2) = 0.5, f'(2) = -0.25
+    (multiple-value-bind (val deriv)
+        (ad:derivative (lambda (x) (ad:/ x)) 2.0d0)
+      (ok (approx= val 0.5d0))
+      (ok (approx= deriv -0.25d0)))))
 
 (deftest test-div-number-number
   (testing "6 / 3 = 2"

@@ -47,11 +47,22 @@
     (1 (first args))
     (t (reduce #'binary-add args))))
 
+(defgeneric unary-negate (a)
+  (:documentation "Unary negation supporting dual numbers.
+Computes -(a + b*eps) = -a - b*eps."))
+
+(defmethod unary-negate ((a dual))
+  (make-dual (cl:- (dual-real a))
+             (cl:- (dual-epsilon a))))
+
+(defmethod unary-negate ((a number))
+  (cl:- a))
+
 (defun - (arg &rest more)
   "Subtraction/negation supporting dual numbers."
   (if more
       (reduce #'binary-sub more :initial-value arg)
-      (binary-sub 0 arg)))
+      (unary-negate arg)))
 
 ;;; --- Multiplication ---
 
@@ -119,8 +130,21 @@
     (1 (first args))
     (t (reduce #'binary-mul args))))
 
+(defgeneric unary-reciprocal (a)
+  (:documentation "Unary reciprocal supporting dual numbers.
+Computes 1/(a + b*eps) = 1/a - b/a^2 * eps."))
+
+(defmethod unary-reciprocal ((a dual))
+  (let ((r (dual-real a))
+        (e (dual-epsilon a)))
+    (make-dual (cl:/ r)
+               (cl:/ (cl:- e) (cl:* r r)))))
+
+(defmethod unary-reciprocal ((a number))
+  (cl:/ a))
+
 (defun / (arg &rest more)
   "Division/reciprocal supporting dual numbers."
   (if more
       (reduce #'binary-div more :initial-value arg)
-      (binary-div 1 arg)))
+      (unary-reciprocal arg)))

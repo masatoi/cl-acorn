@@ -141,3 +141,66 @@
          '(1.0d0 0.0d0))
       (ok (approx= (first val) 12.0d0))
       (ok (approx= (first jvp) 4.0d0)))))
+
+;;; --- hessian-vector-product tests ---
+
+(deftest test-hvp-quadratic
+  (testing "Hvp of f(x,y) = x^2 + x*y with v = [1, 0]"
+    ;; H = [[2, 1], [1, 0]], H*[1,0] = [2, 1]
+    (multiple-value-bind (grad hvp)
+        (ad:hessian-vector-product
+         (lambda (p)
+           (let ((x (first p)) (y (second p)))
+             (ad:+ (ad:* x x) (ad:* x y))))
+         '(3.0d0 4.0d0)
+         '(1.0d0 0.0d0))
+      (ok (approx= (first grad) 10.0d0))   ; df/dx = 2x+y = 10
+      (ok (approx= (second grad) 3.0d0))   ; df/dy = x = 3
+      (ok (approx= (first hvp) 2.0d0))     ; d2f/dx2*1 + d2f/dxdy*0 = 2
+      (ok (approx= (second hvp) 1.0d0))))) ; d2f/dydx*1 + d2f/dy2*0 = 1
+
+(deftest test-hvp-cubic
+  (testing "Hvp of f(x) = x^3 with v = [1]"
+    ;; f'(x) = 3x^2, f''(x) = 6x
+    ;; At x=2: grad = [12], Hvp = [12]
+    (multiple-value-bind (grad hvp)
+        (ad:hessian-vector-product
+         (lambda (p) (ad:* (first p) (first p) (first p)))
+         '(2.0d0)
+         '(1.0d0))
+      (ok (approx= (first grad) 12.0d0))
+      (ok (approx= (first hvp) 12.0d0)))))
+
+(deftest test-hvp-sin
+  (testing "Hvp of f(x) = sin(x) with v = [1]"
+    ;; f'(x) = cos(x), f''(x) = -sin(x)
+    ;; At x=1: grad = [cos(1)], Hvp = [-sin(1)]
+    (multiple-value-bind (grad hvp)
+        (ad:hessian-vector-product
+         (lambda (p) (ad:sin (first p)))
+         '(1.0d0)
+         '(1.0d0))
+      (ok (approx= (first grad) (cos 1.0d0)))
+      (ok (approx= (first hvp) (- (sin 1.0d0)))))))
+
+(deftest test-hvp-multivariate
+  (testing "Hvp of f(x,y) = sin(x)*y^2 with v = [1, 1]"
+    ;; df/dx = cos(x)*y^2, df/dy = 2*sin(x)*y
+    ;; H = [[-sin(x)*y^2, 2*cos(x)*y],
+    ;;      [2*cos(x)*y,   2*sin(x)  ]]
+    ;; At (1, 2): H = [[-sin(1)*4, 2*cos(1)*2], [2*cos(1)*2, 2*sin(1)]]
+    ;; H*[1,1] = [-sin(1)*4+4*cos(1), 4*cos(1)+2*sin(1)]
+    (multiple-value-bind (grad hvp)
+        (ad:hessian-vector-product
+         (lambda (p)
+           (ad:* (ad:sin (first p)) (ad:* (second p) (second p))))
+         '(1.0d0 2.0d0)
+         '(1.0d0 1.0d0))
+      (ok (approx= (first grad) (* (cos 1.0d0) 4.0d0)))
+      (ok (approx= (second grad) (* 2.0d0 (sin 1.0d0) 2.0d0)))
+      (ok (approx= (first hvp)
+                    (+ (* -1.0d0 (sin 1.0d0) 4.0d0)
+                       (* 4.0d0 (cos 1.0d0)))))
+      (ok (approx= (second hvp)
+                    (+ (* 4.0d0 (cos 1.0d0))
+                       (* 2.0d0 (sin 1.0d0))))))))

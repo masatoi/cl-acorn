@@ -42,3 +42,35 @@ Returns (values f(params) J*v) where both are lists of double-floats."
                       (coerce (if (typep o 'dual) (dual-epsilon o) 0)
                               'double-float))
                     output-list))))
+
+(defun hessian-vector-product (fn params vector)
+  "Compute H*v where H is the Hessian of scalar FN at PARAMS and v is VECTOR.
+Uses forward-over-reverse: seeds dual numbers into reverse-mode gradient
+computation. The epsilon components of the resulting gradient entries
+give the Hessian-vector product.
+Returns (values gradient-list hvp-list) as lists of double-floats."
+  (let* ((dual-params (mapcar (lambda (p v)
+                                (make-dual p v))
+                              params vector))
+         (*tape* (list t))
+         (input-nodes (mapcar (lambda (dp)
+                                (make-node dp nil))
+                              dual-params))
+         (output (funcall fn input-nodes)))
+    (setf *tape* (nbutlast *tape*))
+    (etypecase output
+      (tape-node
+       (backward output)
+       (values (mapcar (lambda (n)
+                         (let ((g (node-gradient n)))
+                           (coerce (if (typep g 'dual) (dual-real g) g)
+                                   'double-float)))
+                       input-nodes)
+               (mapcar (lambda (n)
+                         (let ((g (node-gradient n)))
+                           (coerce (if (typep g 'dual) (dual-epsilon g) 0)
+                                   'double-float)))
+                       input-nodes)))
+      (number
+       (values (mapcar (constantly 0.0d0) params)
+               (mapcar (constantly 0.0d0) params))))))

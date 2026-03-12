@@ -144,3 +144,55 @@
            (mean (/ (reduce #'+ samples) n)))
       ;; Mean = k/r = 1.5
       (ok (approx= mean 1.5d0 0.1d0)))))
+
+;;; --- beta distribution tests ---
+
+(deftest test-beta-log-pdf
+  (testing "beta log-pdf at known points"
+    ;; Beta(2,3) at x=0.5: pdf = 1.5, log(1.5) ≈ 0.4055
+    (let ((expected (log 1.5d0)))
+      (ok (approx= (dist:beta-log-pdf 0.5d0 :alpha 2.0d0 :beta 3.0d0)
+                   expected 1d-8)))
+    ;; Beta(1,1) = Uniform(0,1): log-pdf = 0
+    (ok (approx= (dist:beta-log-pdf 0.5d0 :alpha 1.0d0 :beta 1.0d0)
+                 0.0d0 1d-10))))
+
+(deftest test-beta-sample-mean
+  (testing "beta samples have correct mean (alpha/(alpha+beta))"
+    (let* ((n 10000)
+           (a 2.0d0) (b 3.0d0)
+           (samples (loop repeat n collect (dist:beta-sample :alpha a :beta b)))
+           (mean (/ (reduce #'+ samples) n)))
+      ;; Mean = 2/5 = 0.4
+      (ok (approx= mean 0.4d0 0.05d0)))))
+
+;;; --- poisson distribution tests ---
+
+(deftest test-poisson-log-pdf
+  (testing "poisson log-pdf at known points"
+    ;; Poisson(5) at k=3: log(e^(-5) * 5^3 / 3!) = log(0.1404) ≈ -1.9635
+    (let ((expected (+ (* 3.0d0 (log 5.0d0)) (- 5.0d0) (- (dist:log-gammaln 4.0d0)))))
+      (ok (approx= (dist:poisson-log-pdf 3 :rate 5.0d0)
+                   expected 1d-10)))
+    ;; Poisson(1) at k=0: log(e^(-1)) = -1.0
+    (ok (approx= (dist:poisson-log-pdf 0 :rate 1.0d0)
+                 -1.0d0 1d-10))))
+
+(deftest test-poisson-log-pdf-ad
+  (testing "poisson log-pdf differentiable w.r.t. rate"
+    ;; d/dλ [Poisson(λ) log-pdf at k=3] = k/λ - 1
+    ;; At λ=5: 3/5 - 1 = -0.4
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (dist:poisson-log-pdf 3 :rate (first p)))
+                     '(5.0d0))
+      (declare (ignore val))
+      (ok (approx= (first grad) -0.4d0 1d-10)))))
+
+(deftest test-poisson-sample-mean
+  (testing "poisson samples have correct mean"
+    (let* ((n 10000)
+           (rate 4.0d0)
+           (samples (loop repeat n collect (dist:poisson-sample :rate rate)))
+           (mean (/ (reduce #'+ samples) n)))
+      (ok (approx= mean rate 0.2d0)))))

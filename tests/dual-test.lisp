@@ -1,6 +1,5 @@
 (defpackage #:cl-acorn/tests/dual-test
-  (:use #:cl #:rove #:cl-acorn/tests/util)
-  (:local-nicknames (#:ad #:cl-acorn.ad)))
+  (:use #:cl #:rove #:cl-acorn/tests/util))
 
 (in-package #:cl-acorn/tests/dual-test)
 

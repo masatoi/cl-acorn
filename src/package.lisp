@@ -1,4 +1,5 @@
 (defpackage #:cl-acorn.ad
+  (:nicknames #:ad)
   (:use #:cl)
   (:shadow #:+ #:- #:* #:/
            #:sin #:cos #:tan #:exp #:log #:expt #:sqrt #:abs)

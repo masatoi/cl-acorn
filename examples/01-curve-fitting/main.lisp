@@ -10,7 +10,6 @@
 
 (defpackage #:cl-acorn.examples.curve-fitting
   (:use #:cl)
-  (:local-nicknames (#:ad #:cl-acorn.ad))
   (:export #:mse-loss
            #:gradient-descent
            #:ols-solution

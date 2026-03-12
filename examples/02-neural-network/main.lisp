@@ -13,7 +13,6 @@
 
 (defpackage #:cl-acorn.examples.neural-network
   (:use #:cl)
-  (:local-nicknames (#:ad #:cl-acorn.ad))
   (:export #:sigmoid
            #:forward-pass
            #:softmax-cross-entropy

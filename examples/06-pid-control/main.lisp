@@ -10,8 +10,7 @@
 (asdf:load-system :cl-acorn)
 
 (defpackage #:cl-acorn.examples.pid-control
-  (:use #:cl)
-  (:local-nicknames (#:ad #:cl-acorn.ad)))
+  (:use #:cl))
 
 (in-package #:cl-acorn.examples.pid-control)
 

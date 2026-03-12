@@ -7,8 +7,7 @@
 (asdf:load-system :cl-acorn)
 
 (defpackage #:cl-acorn.examples.newton-method
-  (:use #:cl)
-  (:local-nicknames (#:ad #:cl-acorn.ad)))
+  (:use #:cl))
 
 (in-package #:cl-acorn.examples.newton-method)
 

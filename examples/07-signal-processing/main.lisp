@@ -9,8 +9,7 @@
 (asdf:load-system :cl-acorn)
 
 (defpackage #:cl-acorn.examples.signal-processing
-  (:use #:cl)
-  (:local-nicknames (#:ad #:cl-acorn.ad)))
+  (:use #:cl))
 
 (in-package #:cl-acorn.examples.signal-processing)
 

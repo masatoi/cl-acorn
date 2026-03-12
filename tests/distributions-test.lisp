@@ -113,3 +113,34 @@
            (samples (loop repeat n collect (dist:bernoulli-sample :prob 0.7d0)))
            (mean (/ (reduce #'+ samples) n)))
       (ok (approx= mean 0.7d0 0.05d0)))))
+
+;;; --- gamma distribution tests ---
+
+(deftest test-gamma-log-pdf
+  (testing "gamma log-pdf at known points"
+    ;; Gamma(2, 1) at x=1: (2-1)*log(1) - 1*1 + 2*log(1) - logΓ(2) = -1
+    (ok (approx= (dist:gamma-log-pdf 1.0d0 :shape 2.0d0 :rate 1.0d0)
+                 -1.0d0 1d-10))
+    ;; Gamma(1, 1) at x=1: Exponential(1) at x=1: -1.0
+    (ok (approx= (dist:gamma-log-pdf 1.0d0 :shape 1.0d0 :rate 1.0d0)
+                 -1.0d0 1d-10))))
+
+(deftest test-gamma-log-pdf-ad
+  (testing "gamma log-pdf differentiable w.r.t. rate"
+    ;; d/dr [Gamma(2,r) log-pdf at x=1] = 2/r - 1
+    ;; At r=1: 2 - 1 = 1.0
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (dist:gamma-log-pdf 1.0d0 :shape 2.0d0 :rate (first p)))
+                     '(1.0d0))
+      (declare (ignore val))
+      (ok (approx= (first grad) 1.0d0 1d-10)))))
+
+(deftest test-gamma-sample-mean
+  (testing "gamma samples have correct mean (shape/rate)"
+    (let* ((n 10000)
+           (k 3.0d0) (r 2.0d0)
+           (samples (loop repeat n collect (dist:gamma-sample :shape k :rate r)))
+           (mean (/ (reduce #'+ samples) n)))
+      ;; Mean = k/r = 1.5
+      (ok (approx= mean 1.5d0 0.1d0)))))

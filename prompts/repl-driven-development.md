@@ -18,11 +18,14 @@ EXPLORE → EXPERIMENT → PERSIST → VERIFY
 | Read definition | `lisp-read-file` | `name_pattern="^func$"` |
 | Load system | `load-system` | `system`, `force` |
 | Eval/test | `repl-eval` | `package`, `timeout_seconds` |
-| Edit code | `lisp-edit-form` | `form_type`, `form_name` |
+| Edit form | `lisp-edit-form` | `form_type`, `form_name`, `operation`, `content` |
+| Patch form | `lisp-patch-form` | `form_type`, `form_name`, `old_text`, `new_text` |
 | Inspect deeper | `inspect-object` | `id` (from `result_object_id`) |
 | Check syntax | `lisp-check-parens` | `path` |
 | Language spec | `clhs-lookup` | `query` (symbol or section) |
 | Run tests | `run-tests` | `system`, `test` (optional) |
+| Diagnose pool | `pool-status`  | (no args)          |
+| Kill worker   | `pool-kill-worker` | `reset` (optional) |
 
 **Minimal Workflow (experienced users):**
 1. `repl-eval` — prototype in REPL
@@ -42,6 +45,35 @@ Before file operations, set the project root:
 Call `fs-set-project-root` with `"."` (auto-resolves to absolute path) or an explicit absolute path. Verify with `fs-get-project-info` if needed.
 
 **If operations fail with "project root not set"**: Call `fs-set-project-root` first.
+
+## Worker Pool Architecture
+
+When the worker pool is enabled (default), tools run in two process types:
+
+**Parent process** (inline — shared across all sessions):
+- File tools: `fs-read-file`, `fs-write-file`, `fs-list-directory`, `fs-get-project-info`, `fs-set-project-root`
+- Lisp-aware reading/editing: `lisp-read-file`, `lisp-edit-form`, `lisp-patch-form`, `lisp-check-parens`
+- Search: `clgrep-search`, `clhs-lookup`
+- Diagnostics: `pool-status`, `pool-kill-worker`
+
+**Worker process** (isolated — one dedicated process per session):
+- `repl-eval`, `load-system`, `run-tests`
+- `code-find`, `code-describe`, `code-find-references`
+- `inspect-object`
+
+**Key guarantees:**
+- **Session affinity**: All tool calls within your session route to the same
+  dedicated worker. `load-system` followed by `code-find` works because both
+  execute in the same process with shared state.
+- **Crash recovery**: If a worker crashes, a replacement is spawned and bound
+  to your session automatically. The next tool call returns a one-time crash
+  notification; re-issue `load-system` to restore loaded systems.
+- **File edits are not auto-loaded**: `lisp-edit-form` writes to disk in the
+  parent process. The worker sees file changes only when you explicitly call
+  `load-system` or evaluate `(load "path")` via `repl-eval`.
+
+Disable the worker pool with `MCP_NO_WORKER_POOL=1` (all tools run inline in
+a single process).
 
 ## Core Philosophy: Incremental Development
 
@@ -89,7 +121,7 @@ EXPLORE ──→ EXPERIMENT ──→ REFINE ────────┘
 **Why prefer cl-mcp tools?**
 - `clgrep-search` returns form type, name, signature, and package context
 - Tools respect project root security policies
-- Maintain consistency with the running Lisp image
+- Maintain consistency with the Lisp runtime (parent process for file tools, dedicated worker for eval tools)
 
 ### Tool Selection
 
@@ -107,14 +139,15 @@ What do you need to do?
 │   └─ Other files ────────→ fs-read-file
 │
 ├─ LOAD SYSTEM
-│   └─ Load/reload ASDF system ──→ load-system (PREFERRED over repl-eval + ql:quickload)
+│   └─ Load/reload ASDF system ──→ load-system (PREFERRED over repl-eval + asdf:load-system)
 │
 ├─ EXECUTE
 │   ├─ Test expression ────→ repl-eval
 │   └─ Inspect result ─────→ inspect-object (use result_object_id)
 │
 ├─ EDIT
-│   ├─ Existing .lisp ─────→ lisp-edit-form (ALWAYS)
+│   ├─ Replace/insert form ─→ lisp-edit-form (structural operations)
+│   ├─ Small text change ───→ lisp-patch-form (token-efficient sub-form edit)
 │   └─ New file ───────────→ fs-write-file (minimal), then lisp-edit-form
 │
 └─ REFERENCE
@@ -125,23 +158,28 @@ What do you need to do?
 
 ### 1. Editing Code
 
-**ALWAYS use `lisp-edit-form` for modifying existing Lisp source code.**
+**ALWAYS use `lisp-edit-form` or `lisp-patch-form` for modifying existing Lisp source code.**
 
-- **Why?** It preserves file structure, comments, and formatting. It uses CST parsing to safely locate forms.
+- **Why?** They preserve file structure, comments, and formatting. They use CST parsing to safely locate forms.
 - **Constraints:**
     - Match specific top-level forms (e.g., `defun`, `defmethod`, `defmacro`).
-    - For `defmethod`, you MUST include specializers in `form_name` (e.g., `print-object (my-class t)`).
+    - For `defmethod`, you MUST include specializers in `form_name` (e.g., `print-object ((obj my-class) stream)`).
     - Do NOT try to match lines with regex using other tools. Use the structural parser.
 - **New Files:** Only use `fs-write-file` when creating a brand new file from scratch.
 
-**Operations available:**
+**`lisp-edit-form` operations** (structural — with parinfer auto-repair):
 - `replace`: Replace the entire form definition
 - `insert_before`: Insert new form before the matched form
 - `insert_after`: Insert new form after the matched form
 
+**`lisp-patch-form`** (scoped text replacement — no auto-repair):
+- Uses `old_text`/`new_text` for token-efficient sub-form replacement
+- Most efficient for small changes within large forms
+- Fails immediately if the patch breaks form structure (no changes written)
+
 **Dry-run safety switch**
-- Pass `dry_run: true` to preview edits without touching the file. Useful when unsure the matcher will hit the right form.
-- The call returns a hash-table with keys: `"would_change"` (boolean), `"original"` (matched form text), `"preview"` (post-edit file text), `"file_path"`, `"operation"`.
+- Both `lisp-edit-form` and `lisp-patch-form` support `dry_run: true` to preview without touching the file. Useful when unsure the matcher will hit the right form.
+- The call returns a hash-table with keys: `"would_change"` (boolean), `"original"` (matched form text), `"preview"` (full file text for `lisp-edit-form`, modified form text for `lisp-patch-form`), `"file_path"`, `"operation"`.
 - Example:
   ```json
   {"name": "lisp-edit-form",
@@ -210,10 +248,10 @@ Use `repl-eval` for:
 - Verifying changes immediately after editing.
 - (Optional) Compiling definitions to surface warnings early.
 
-**For loading ASDF systems, prefer `load-system`** over `(ql:quickload ...)` via `repl-eval`.
+**For loading ASDF systems, prefer `load-system`** over `(asdf:load-system ...)` via `repl-eval`.
 `load-system` handles staleness (force-reload), output suppression, and timeouts automatically.
 
-**WARNING:** Definitions created via `repl-eval` are **TRANSIENT**. They are lost if the server restarts. To make changes permanent, you MUST edit the file using `lisp-edit-form` or `fs-write-file` (for new files).
+**WARNING:** Definitions created via `repl-eval` are **TRANSIENT**. They exist only in your session's worker process and are lost if the server restarts or the worker crashes. After a worker crash, the server spawns a replacement automatically and returns a one-time crash notification on your next tool call; re-issue `load-system` to restore state. To make changes permanent, you MUST edit the file using `lisp-edit-form` or `fs-write-file` (for new files).
 
 **Object Inspection (with Preview):**
 When `repl-eval` returns a non-primitive result (list, hash-table, CLOS instance, etc.), the response includes:
@@ -374,13 +412,23 @@ repl-eval (experiment) → lisp-edit-form (persist) → repl-eval (verify)
    ```
    Test with `(my-function 5)` → refine → repeat until correct.
 
-4. **Persist**:
-   ```json
-   {"file_path": "src/core.lisp", "form_type": "defun", "form_name": "my-function",
-    "operation": "replace", "content": "(defun my-function (x)\n  (* x 2))"}
-   ```
+4. **Persist** (choose one):
+   - **Full replace** via `lisp-edit-form` (when rewriting the whole form):
+     ```json
+     {"name": "lisp-edit-form", "arguments": {"file_path": "src/core.lisp",
+      "form_type": "defun", "form_name": "my-function",
+      "operation": "replace", "content": "(defun my-function (x)\n  (* x 2))"}}
+     ```
+   - **Patch** via `lisp-patch-form` (when changing a small part — saves output tokens):
+     ```json
+     {"name": "lisp-patch-form", "arguments": {"file_path": "src/core.lisp",
+      "form_type": "defun", "form_name": "my-function",
+      "old_text": "(+ x 1)", "new_text": "(* x 2)"}}
+     ```
 
 5. **Verify**: Re-evaluate or run tests.
+
+**Note:** `lisp-edit-form` writes to disk but does not reload the definition in the worker. Either re-evaluate the `defun` form via `repl-eval` (step 3 already does this) or call `load-system` to reload the entire system from disk.
 
 **Optional: Compile check** — `(compile 'my-function)` surfaces warnings early. Check `stderr`.
 
@@ -516,6 +564,7 @@ repl-eval (experiment) → lisp-edit-form (persist) → repl-eval (verify)
 ### Scenario: Finishing / Pre-PR Check
 
 When you are in a “finish” phase (ready to run the full suite and stop iterating), prefer compiling the whole system from disk rather than compiling individual functions.
+This recompiles from disk in the worker, picking up all file changes made via `lisp-edit-form`.
 
 1. **Compile whole system:** Force a full recompile and inspect warnings:
    ```json
@@ -598,7 +647,7 @@ When primary tools fail or are insufficient:
    ```json
    {"path": "src/file.lisp", "collapsed": true}
    ```
-2. **Check specializers:** For methods, include them: `"form_name": "my-method (string t)"`
+2. **Check specializers:** For methods, include the full lambda-list: `"form_name": "my-method ((s string))"`
 3. **Check package context:** Ensure the form is in the expected file
 4. **Use exact form type:** Use `defun`, not `function` or `def`
 
@@ -626,6 +675,17 @@ When primary tools fail or are insufficient:
 3. **Clear definition:** Use `(fmakunbound 'symbol)` if needed
 4. **Prefer file edits:** Use `lisp-edit-form` for persistent changes
 
+### Worker Crashed / State Lost
+**Symptom:** A tool call returns a crash notification, or previously loaded systems and REPL definitions are gone.
+
+**Diagnosis:** The worker process assigned to your session crashed and was replaced.
+
+**Solutions:**
+1. **Re-load your system:** `load-system` to restore packages and definitions in the new worker
+2. **Check pool health:** Use `pool-status` (no arguments) to see worker states
+3. **Kill and restart:** Use `pool-kill-worker` to intentionally kill a stuck or corrupted worker. Pass `reset=true` to immediately spawn a replacement.
+4. **If crashes repeat:** The circuit breaker may trip after 3 crashes in 5 minutes. Check server logs for the root cause (e.g., out-of-memory, infinite loop)
+
 ### Parenthesis Mismatch
 **Symptom:** Evaluation fails with "unexpected end of file" or similar
 
@@ -652,7 +712,7 @@ When exploring, batch independent operations:
 - **Don't re-read:** Cache file contents mentally within a task
 
 ### REPL Efficiency
-- **Load once:** Use `load-system` at session start, not repeatedly
+- **Load once per session:** Use `load-system` at session start, not repeatedly. Each session has its own worker with independent state; loading in one session does not affect others.
 - **Batch evals:** Combine related expressions in one `repl-eval` call
 - **Compile late:** Only compile when implementation stabilizes
 
@@ -673,7 +733,7 @@ When exploring, batch independent operations:
 
 **Development loop:**
 1. `repl-eval` — experiment until correct
-2. `lisp-edit-form` — persist
+2. `lisp-edit-form` or `lisp-patch-form` — persist
 3. `repl-eval` — verify
 
 **When stuck:**

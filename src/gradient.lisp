@@ -23,3 +23,22 @@ df/dp_i for each parameter p_i, as double-floats."
       (number
        (values (coerce output 'double-float)
                (mapcar (constantly 0.0d0) input-nodes))))))
+
+(defun jacobian-vector-product (fn params vector)
+  "Compute J*v where J is the Jacobian of FN at PARAMS and v is VECTOR.
+FN must accept a list of values and return a list of values (or a single value).
+Uses forward-mode: seeds each parameter as dual(param, vector-component).
+Returns (values f(params) J*v) where both are lists of double-floats."
+  (let* ((dual-inputs (mapcar (lambda (p v)
+                                (make-dual p v))
+                              params vector))
+         (outputs (funcall fn dual-inputs))
+         (output-list (if (listp outputs) outputs (list outputs))))
+    (values (mapcar (lambda (o)
+                      (coerce (if (typep o 'dual) (dual-real o) o)
+                              'double-float))
+                    output-list)
+            (mapcar (lambda (o)
+                      (coerce (if (typep o 'dual) (dual-epsilon o) 0)
+                              'double-float))
+                    output-list))))

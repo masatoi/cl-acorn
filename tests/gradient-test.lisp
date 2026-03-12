@@ -101,3 +101,43 @@
                      '(3))
       (ok (approx= val 9.0d0))
       (ok (approx= (first grad) 6.0d0)))))
+
+;;; --- jacobian-vector-product tests ---
+
+(deftest test-jvp-identity
+  (testing "Jvp of f(x) = [x1, x2] with v = [1, 0] gives [1, 0]"
+    (multiple-value-bind (val jvp)
+        (ad:jacobian-vector-product
+         (lambda (p) (list (first p) (second p)))
+         '(3.0d0 4.0d0)
+         '(1.0d0 0.0d0))
+      (ok (approx= (first val) 3.0d0))
+      (ok (approx= (second val) 4.0d0))
+      (ok (approx= (first jvp) 1.0d0))
+      (ok (approx= (second jvp) 0.0d0)))))
+
+(deftest test-jvp-linear
+  (testing "Jvp of f(x,y) = [2x+y, x-y] with v = [1,1]"
+    ;; J = [[2, 1], [1, -1]], J*v = [3, 0]
+    (multiple-value-bind (val jvp)
+        (ad:jacobian-vector-product
+         (lambda (p)
+           (let ((x (first p)) (y (second p)))
+             (list (ad:+ (ad:* 2 x) y)
+                   (ad:- x y))))
+         '(1.0d0 1.0d0)
+         '(1.0d0 1.0d0))
+      (ok (approx= (first val) 3.0d0))
+      (ok (approx= (second val) 0.0d0))
+      (ok (approx= (first jvp) 3.0d0))
+      (ok (approx= (second jvp) 0.0d0)))))
+
+(deftest test-jvp-scalar-function
+  (testing "Jvp of scalar f(x,y) = x*y with v = [1,0] gives df/dx"
+    (multiple-value-bind (val jvp)
+        (ad:jacobian-vector-product
+         (lambda (p) (list (ad:* (first p) (second p))))
+         '(3.0d0 4.0d0)
+         '(1.0d0 0.0d0))
+      (ok (approx= (first val) 12.0d0))
+      (ok (approx= (first jvp) 4.0d0)))))

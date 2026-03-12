@@ -1,0 +1,103 @@
+(defpackage #:cl-acorn/tests/gradient-test
+  (:use #:cl #:rove #:cl-acorn/tests/util)
+  (:local-nicknames (#:ad #:cl-acorn.ad)))
+
+(in-package #:cl-acorn/tests/gradient-test)
+
+;;; --- gradient tests ---
+
+(deftest test-gradient-sum
+  (testing "gradient of f(x,y) = x + y is (1, 1)"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (ad:+ (first p) (second p)))
+                     '(3.0d0 4.0d0))
+      (ok (approx= val 7.0d0))
+      (ok (approx= (first grad) 1.0d0))
+      (ok (approx= (second grad) 1.0d0)))))
+
+(deftest test-gradient-product
+  (testing "gradient of f(x,y) = x * y is (y, x)"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (ad:* (first p) (second p)))
+                     '(3.0d0 4.0d0))
+      (ok (approx= val 12.0d0))
+      (ok (approx= (first grad) 4.0d0))
+      (ok (approx= (second grad) 3.0d0)))))
+
+(deftest test-gradient-polynomial
+  (testing "gradient of f(x,y) = x^2 + x*y at (3,4) is (2x+y, x) = (10, 3)"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (let ((x (first p)) (y (second p)))
+                         (ad:+ (ad:* x x) (ad:* x y))))
+                     '(3.0d0 4.0d0))
+      (ok (approx= val 21.0d0))
+      (ok (approx= (first grad) 10.0d0))
+      (ok (approx= (second grad) 3.0d0)))))
+
+(deftest test-gradient-single-variable
+  (testing "gradient of f(x) = x^2 at x=3 is (6)"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p) (ad:* (first p) (first p)))
+                     '(3.0d0))
+      (ok (approx= val 9.0d0))
+      (ok (approx= (first grad) 6.0d0)))))
+
+(deftest test-gradient-three-variables
+  (testing "gradient of f(x,y,z) = x*y*z at (2,3,4) is (yz,xz,xy)=(12,8,6)"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (ad:* (first p) (second p) (third p)))
+                     '(2.0d0 3.0d0 4.0d0))
+      (ok (approx= val 24.0d0))
+      (ok (approx= (first grad) 12.0d0))
+      (ok (approx= (second grad) 8.0d0))
+      (ok (approx= (third grad) 6.0d0)))))
+
+(deftest test-gradient-transcendental
+  (testing "gradient of f(x,y) = sin(x) * exp(y) at (1, 0)"
+    ;; df/dx = cos(x)*exp(y) = cos(1)
+    ;; df/dy = sin(x)*exp(y) = sin(1)
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (ad:* (ad:sin (first p)) (ad:exp (second p))))
+                     '(1.0d0 0.0d0))
+      (ok (approx= val (sin 1.0d0)))
+      (ok (approx= (first grad) (cos 1.0d0)))
+      (ok (approx= (second grad) (sin 1.0d0))))))
+
+(deftest test-gradient-matches-derivative
+  (testing "single-variable gradient matches forward-mode derivative"
+    (let ((fn-grad (lambda (p) (ad:exp (ad:sin (first p)))))
+          (fn-deriv (lambda (x) (ad:exp (ad:sin x)))))
+      (multiple-value-bind (fwd-val fwd-grad) (ad:derivative fn-deriv 1.0d0)
+        (multiple-value-bind (rev-val rev-grad) (ad:gradient fn-grad '(1.0d0))
+          (ok (approx= fwd-val rev-val))
+          (ok (approx= fwd-grad (first rev-grad))))))))
+
+(deftest test-gradient-with-loop
+  (testing "gradient propagates through iterative computation"
+    ;; f(x,y) = sum_{i=0}^{9} (x*y) = 10*x*y
+    ;; df/dx = 10y, df/dy = 10x
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (let ((x (first p)) (y (second p))
+                             (acc 0.0d0))
+                         (dotimes (i 10)
+                           (declare (ignore i))
+                           (setf acc (ad:+ acc (ad:* x y))))
+                         acc))
+                     '(2.0d0 3.0d0))
+      (ok (approx= val 60.0d0))
+      (ok (approx= (first grad) 30.0d0))
+      (ok (approx= (second grad) 20.0d0)))))
+
+(deftest test-gradient-integer-params
+  (testing "gradient accepts integer parameters"
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p) (ad:* (first p) (first p)))
+                     '(3))
+      (ok (approx= val 9.0d0))
+      (ok (approx= (first grad) 6.0d0)))))

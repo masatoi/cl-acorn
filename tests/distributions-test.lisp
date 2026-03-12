@@ -1,0 +1,4 @@
+(defpackage #:cl-acorn/tests/distributions-test
+  (:use #:cl #:rove #:cl-acorn/tests/util))
+
+(in-package #:cl-acorn/tests/distributions-test)

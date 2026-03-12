@@ -1,5 +1,5 @@
 (defsystem "cl-acorn"
-  :version "0.2.0"
+  :version "0.3.0"
   :author ""
   :license "MIT"
   :depends-on ()
@@ -14,8 +14,30 @@
                  (:file "tape")
                  (:file "reverse-arithmetic")
                  (:file "reverse-transcendental")
-                 (:file "gradient"))))
-  :description "Automatic differentiation using dual numbers and reverse-mode tape"
+                 (:file "gradient")
+                 (:module "distributions"
+                  :serial t
+                  :components
+                  ((:file "package")
+                   (:file "util")
+                   (:file "normal")
+                   (:file "uniform")
+                   (:file "bernoulli")
+                   (:file "gamma")
+                   (:file "beta")
+                   (:file "poisson")))
+                 (:module "optimizers"
+                  :serial t
+                  :components
+                  ((:file "package")
+                   (:file "sgd")
+                   (:file "adam")))
+                 (:module "inference"
+                  :serial t
+                  :components
+                  ((:file "package")
+                   (:file "hmc"))))))
+  :description "Automatic differentiation and probabilistic inference building blocks"
   :in-order-to ((test-op (test-op "cl-acorn/tests"))))
 
 (defsystem "cl-acorn/tests"
@@ -34,6 +56,9 @@
                  (:file "tape-test")
                  (:file "reverse-arithmetic-test")
                  (:file "reverse-transcendental-test")
-                 (:file "gradient-test"))))
+                 (:file "gradient-test")
+                 (:file "distributions-test")
+                 (:file "optimizers-test")
+                 (:file "hmc-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))

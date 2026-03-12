@@ -63,3 +63,53 @@
            (samples (loop repeat n collect (dist:normal-sample :mu 5.0d0 :sigma 0.1d0)))
            (mean (/ (reduce #'cl:+ samples) n)))
       (ok (approx= mean 5.0d0 0.05d0)))))
+
+;;; --- uniform distribution tests ---
+
+(deftest test-uniform-log-pdf
+  (testing "uniform log-pdf at known points"
+    ;; Uniform(0,1) at x=0.5: log(1/(1-0)) = 0
+    (ok (approx= (dist:uniform-log-pdf 0.5d0) 0.0d0 1d-10))
+    ;; Uniform(2,5) at x=3: log(1/(5-2)) = -log(3)
+    (ok (approx= (dist:uniform-log-pdf 3.0d0 :low 2.0d0 :high 5.0d0)
+                 (- (log 3.0d0)) 1d-10))))
+
+(deftest test-uniform-log-pdf-out-of-bounds
+  (testing "uniform log-pdf returns very negative value out of bounds"
+    (ok (< (dist:uniform-log-pdf -1.0d0 :low 0.0d0 :high 1.0d0) -1d100))))
+
+(deftest test-uniform-sample-range
+  (testing "uniform samples stay within bounds"
+    (let ((lo 2.0d0) (hi 5.0d0))
+      (loop repeat 1000
+            do (let ((s (dist:uniform-sample :low lo :high hi)))
+                 (ok (>= s lo))
+                 (ok (<= s hi)))))))
+
+;;; --- bernoulli distribution tests ---
+
+(deftest test-bernoulli-log-pdf
+  (testing "bernoulli log-pdf at known points"
+    ;; Bernoulli(0.7) at x=1: log(0.7)
+    (ok (approx= (dist:bernoulli-log-pdf 1.0d0 :prob 0.7d0)
+                 (log 0.7d0) 1d-10))
+    ;; Bernoulli(0.7) at x=0: log(0.3)
+    (ok (approx= (dist:bernoulli-log-pdf 0.0d0 :prob 0.7d0)
+                 (log 0.3d0) 1d-10))))
+
+(deftest test-bernoulli-log-pdf-ad
+  (testing "bernoulli log-pdf differentiable w.r.t. prob"
+    ;; d/dp log Bernoulli(1|p) at p=0.5 = 1/p = 2.0
+    (multiple-value-bind (val grad)
+        (ad:gradient (lambda (p)
+                       (dist:bernoulli-log-pdf 1.0d0 :prob (first p)))
+                     '(0.5d0))
+      (ok (approx= val (log 0.5d0) 1d-10))
+      (ok (approx= (first grad) 2.0d0 1d-10)))))
+
+(deftest test-bernoulli-sample
+  (testing "bernoulli samples have correct mean"
+    (let* ((n 10000)
+           (samples (loop repeat n collect (dist:bernoulli-sample :prob 0.7d0)))
+           (mean (/ (reduce #'+ samples) n)))
+      (ok (approx= mean 0.7d0 0.05d0)))))

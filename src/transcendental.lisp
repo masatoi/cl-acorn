@@ -83,7 +83,7 @@
 (defun log (x &optional base)
   "Logarithm supporting dual numbers. Without base, returns natural log."
   (if base
-      (binary-div (unary-log x) (unary-log base))
+      (binary-div (unary-log x) (unary-log (coerce base 'double-float)))
       (unary-log x)))
 
 (defgeneric ad-sqrt (x)

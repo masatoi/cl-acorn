@@ -234,6 +234,24 @@ Configure Claude Code (in `~/.claude/settings.json` or project `.mcp.json`):
 - Docstrings required for public functions/classes
 - Each file starts with `(in-package ...)`
 
+### Package Nicknames: Global Only — NO local-nicknames
+
+**NEVER use `(:local-nicknames ...)` in `defpackage` forms.** This project uses global package nicknames defined in each package's own `defpackage`:
+
+```lisp
+;; GOOD — global nickname declared by the package itself
+(defpackage #:cl-acorn.ad
+  (:nicknames #:ad) ...)
+
+;; BAD — local-nicknames in a consuming package
+(defpackage #:cl-acorn.foo
+  (:local-nicknames (#:ad #:cl-acorn.ad)) ...)  ; PROHIBITED
+```
+
+**Reasons:**
+1. Global nicknames (`ad:`, `dist:`, `opt:`, `infer:`) are already available everywhere — local-nicknames add no value
+2. cl-mcp's `lisp-edit-form` CST parser cannot resolve local nicknames, causing structural editing to fail on affected files
+
 ## Repository Structure
 
 ```

@@ -1,5 +1,5 @@
 (defsystem "cl-acorn"
-  :version "0.1.0"
+  :version "0.2.0"
   :author ""
   :license "MIT"
   :depends-on ()
@@ -10,8 +10,12 @@
                  (:file "dual")
                  (:file "arithmetic")
                  (:file "transcendental")
-                 (:file "interface"))))
-  :description "Forward-mode automatic differentiation using dual numbers"
+                 (:file "interface")
+                 (:file "tape")
+                 (:file "reverse-arithmetic")
+                 (:file "reverse-transcendental")
+                 (:file "gradient"))))
+  :description "Automatic differentiation using dual numbers and reverse-mode tape"
   :in-order-to ((test-op (test-op "cl-acorn/tests"))))
 
 (defsystem "cl-acorn/tests"
@@ -26,6 +30,10 @@
                  (:file "dual-test")
                  (:file "arithmetic-test")
                  (:file "transcendental-test")
-                 (:file "derivative-test"))))
+                 (:file "derivative-test")
+                 (:file "tape-test")
+                 (:file "reverse-arithmetic-test")
+                 (:file "reverse-transcendental-test")
+                 (:file "gradient-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))

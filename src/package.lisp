@@ -12,5 +12,13 @@
    #:+ #:- #:* #:/
    ;; Transcendental
    #:sin #:cos #:tan #:exp #:log #:expt #:sqrt #:abs
-   ;; Interface
-   #:derivative))
+   ;; Interface (forward-mode)
+   #:derivative
+   ;; Tape node class and accessors (reverse-mode)
+   #:tape-node
+   #:node-value
+   #:node-gradient
+   ;; Interface (reverse-mode)
+   #:gradient
+   #:jacobian-vector-product
+   #:hessian-vector-product))

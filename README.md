@@ -1,6 +1,6 @@
 # cl-acorn
 
-Automatic differentiation for Common Lisp -- forward-mode (dual numbers) and reverse-mode (tape-based backpropagation).
+Automatic differentiation, probability distributions, and Bayesian inference building blocks for Common Lisp.
 
 ```lisp
 (ql:quickload :cl-acorn)
@@ -101,6 +101,45 @@ Computes `J*v` where `J` is the Jacobian of `fn` at `params`. Uses forward-mode 
 
 Computes `H*v` where `H` is the Hessian of scalar `fn` at `params`. Uses forward-over-reverse composition. Returns the gradient and Hessian-vector product as lists of `double-float`.
 
+### Probability Distributions
+
+All symbols are exported from `cl-acorn.distributions` (nickname: `dist`). Log-PDF functions are AD-transparent -- parameters accept dual numbers and tape-nodes for automatic differentiation.
+
+| Distribution | Log-PDF | Sample |
+|-------------|---------|--------|
+| Normal | `(dist:normal-log-pdf x :mu 0 :sigma 1)` | `(dist:normal-sample ...)` |
+| Gamma | `(dist:gamma-log-pdf x :shape 2 :rate 1)` | `(dist:gamma-sample ...)` |
+| Beta | `(dist:beta-log-pdf x :alpha 2 :beta 3)` | `(dist:beta-sample ...)` |
+| Uniform | `(dist:uniform-log-pdf x :low 0 :high 1)` | `(dist:uniform-sample ...)` |
+| Bernoulli | `(dist:bernoulli-log-pdf x :prob 0.7)` | `(dist:bernoulli-sample ...)` |
+| Poisson | `(dist:poisson-log-pdf k :rate 5)` | `(dist:poisson-sample ...)` |
+
+### Optimizers
+
+All symbols are exported from `cl-acorn.optimizers` (nickname: `opt`).
+
+| Optimizer | Usage |
+|----------|-------|
+| SGD | `(opt:sgd-step params grads :lr 0.01)` |
+| Adam | `(opt:adam-step params grads state :lr 0.001)` |
+
+```lisp
+;; Adam requires a state object
+(defvar *state* (opt:make-adam-state n-params))
+(opt:adam-step params grads *state* :lr 0.001d0)
+```
+
+### Bayesian Inference (HMC)
+
+All symbols are exported from `cl-acorn.inference` (nickname: `infer`).
+
+```lisp
+(infer:hmc log-pdf-fn initial-params
+  :n-samples 1000 :n-warmup 500
+  :step-size 0.01d0 :n-leapfrog 10)
+;; => (values samples accept-rate)
+```
+
 ## Usage Patterns
 
 ### Basic Differentiation (Forward-Mode)
@@ -165,6 +204,33 @@ AD propagates through arbitrary program structures -- loops, accumulators, condi
 ;; gradient = (10, 3), H*v = (2, 1)
 ```
 
+### Bayesian Inference with HMC
+
+```lisp
+;; Infer parameters of a normal distribution from data
+(defvar *data* '(2.1d0 1.8d0 2.3d0 1.9d0 2.0d0))
+
+(defun model-log-pdf (params)
+  (let ((mu (first params))
+        (log-sigma (second params)))
+    (let ((sigma (ad:exp log-sigma))
+          (ll 0.0d0))
+      (dolist (x *data*)
+        (setf ll (ad:+ ll (dist:normal-log-pdf x :mu mu :sigma sigma))))
+      ;; Add priors
+      (ad:+ ll
+            (dist:normal-log-pdf mu :mu 0.0d0 :sigma 10.0d0)
+            (dist:normal-log-pdf log-sigma :mu 0.0d0 :sigma 2.0d0)))))
+
+(multiple-value-bind (samples accept-rate)
+    (infer:hmc #'model-log-pdf '(0.0d0 0.0d0)
+      :n-samples 2000 :n-warmup 500
+      :step-size 0.01d0 :n-leapfrog 20)
+  ;; samples: list of (mu, log-sigma) parameter vectors
+  ;; accept-rate: fraction of accepted proposals
+  )
+```
+
 ## Examples
 
 The `examples/` directory contains complete, runnable demonstrations:
@@ -188,7 +254,7 @@ Run any example:
 
 ## Running Tests
 
-cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (107 tests).
+cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (136 tests).
 
 ```bash
 rove cl-acorn.asd

@@ -36,6 +36,7 @@
                   :serial t
                   :components
                   ((:file "package")
+                   (:file "conditions")
                    (:file "dual-avg")
                    (:file "hmc")
                    (:file "nuts")
@@ -65,6 +66,8 @@
                  (:file "hmc-test")
                  (:file "nuts-test")
                  (:file "vi-test")
-                 (:file "validation-test"))))
+                 (:file "validation-test")
+                 (:file "conditions-test")
+                 (:file "inference-diagnostics-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))

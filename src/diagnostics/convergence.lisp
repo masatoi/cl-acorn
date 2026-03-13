@@ -145,8 +145,7 @@ Status is 'ok' when R-hat < 1.1 and Bulk-ESS > 100, else 'warn'."
          (bess      (chain-result-bulk-ess chain-result))
          (tess      (chain-result-tail-ess chain-result))
          (ndiv      (chain-result-n-divergences chain-result))
-         (n-warmup  (chain-result-n-warmup chain-result))
-         (total     (* n-chains (+ n-samples n-warmup))))
+         (total     (* n-chains n-samples)))
     (format t "~%Convergence diagnostics  (~D chains x ~D samples)~%" n-chains n-samples)
     (format t "==============================================~%")
     (format t "~6A | ~6A | ~8A | ~8A | ~6A~%"

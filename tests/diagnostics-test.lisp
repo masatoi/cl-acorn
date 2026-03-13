@@ -96,7 +96,8 @@
                      (diag:print-convergence-summary cr))))
       (ok (search "warn" output))
       (ok (search "1.150" output))
-      (ok (search "Total divergences: 2" output)))))
+      ;; 4 chains x 100 post-warmup samples = 400 total; divergences counted post-warmup only
+      (ok (search "Total divergences: 2 / 400" output)))))
 
 (defvar *std-normal-2d*
   (lambda (params)

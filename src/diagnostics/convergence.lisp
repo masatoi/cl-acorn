@@ -55,9 +55,9 @@ Returns a list of double-float R-hat values, one per parameter."
 
 (defun autocorrelation (xs lag)
   "Normalized autocorrelation of XS at LAG. Returns value in [-1, 1]."
-  (let* ((n (length xs))
-         (m (mean-of xs))
-         (v (variance-of xs)))
+  (let ((n (length xs))
+        (m (mean-of xs))
+        (v (variance-of xs)))
     (if (< v 1d-15)
         0.0d0
         (let ((cov (loop for i from 0 below (- n lag)

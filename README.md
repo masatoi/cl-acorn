@@ -173,6 +173,72 @@ Common exported condition and restart APIs include:
 | Restarts | `infer:use-fallback-params`, `infer:return-empty-samples`, `infer:continue-with-warnings` |
 | Diagnostics | `infer:inference-diagnostics`, `infer:diagnostics-accept-rate`, `infer:diagnostics-n-divergences`, `infer:diagnostics-final-step-size`, `infer:diagnostics-n-samples`, `infer:diagnostics-n-warmup`, `infer:diagnostics-elapsed-seconds` |
 
+### MCMC Diagnostics
+
+All symbols are exported from `cl-acorn.diagnostics` (nickname: `diag`).
+
+**Multi-Chain Execution:**
+
+```lisp
+(diag:run-chains my-log-posterior '(0.0d0 0.0d0)
+                 :n-chains 4 :n-samples 1000 :n-warmup 500)
+;; => chain-result with R-hat, ESS, accept-rates, n-divergences
+```
+
+`run-chains` accepts `:sampler :nuts` (default) or `:sampler :hmc`, and returns a `chain-result` struct with fields:
+
+| Accessor | Description |
+|----------|-------------|
+| `diag:chain-result-samples` | List of per-chain sample lists |
+| `diag:chain-result-n-chains` | Number of chains |
+| `diag:chain-result-n-samples` | Post-warmup samples per chain |
+| `diag:chain-result-n-warmup` | Warmup samples per chain |
+| `diag:chain-result-r-hat` | Per-parameter R-hat values |
+| `diag:chain-result-bulk-ess` | Per-parameter bulk ESS |
+| `diag:chain-result-tail-ess` | Per-parameter tail ESS |
+| `diag:chain-result-accept-rates` | Per-chain acceptance rates |
+| `diag:chain-result-n-divergences` | Total divergent transitions |
+| `diag:chain-result-elapsed-seconds` | Wall-clock time |
+
+**Convergence Diagnostics:**
+
+```lisp
+(diag:print-convergence-summary result)
+;; Convergence diagnostics  (4 chains x 1000 samples)
+;; ====================================================
+;; Param | R-hat  | Bulk-ESS | Tail-ESS | Status
+;; ...
+```
+
+Individual diagnostic functions (each takes a list of per-chain sample lists):
+
+```lisp
+(diag:r-hat chains)     ;; => list of R-hat values (one per parameter)
+(diag:bulk-ess chains)  ;; => list of bulk ESS values
+(diag:tail-ess chains)  ;; => list of tail ESS values
+```
+
+**Model Comparison:**
+
+```lisp
+(diag:waic result log-lik-fn data)
+;; => (values waic p-waic lppd)
+
+(diag:loo result log-lik-fn data)
+;; => (values loo p-loo k-hats)
+
+(diag:print-model-comparison
+  "model-a" result-a log-lik-a data
+  "model-b" result-b log-lik-b data)
+;; Model comparison
+;; ====================================================
+;; Model    | WAIC   | p_waic | LOO    | p_loo
+;; ...
+;; Lower is better.
+```
+
+`log-lik-fn` is a function `(lambda (params data-point) -> log-likelihood)` using plain arithmetic (not AD-transparent).
+
 ## Usage Patterns
 
 ### Basic Differentiation (Forward-Mode)
@@ -291,7 +357,7 @@ Run any example:
 
 ## Running Tests
 
-cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (currently 184 tests).
+cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (currently 207 tests).
 
 ```bash
 rove cl-acorn.asd

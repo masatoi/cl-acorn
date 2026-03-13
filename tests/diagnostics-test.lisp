@@ -130,6 +130,29 @@
                  (diag:chain-result-bulk-ess cr))))))
 
 ;;; -------------------------------------------------------------------------
+;;; run-chains slot coverage tests
+;;; -------------------------------------------------------------------------
+
+(deftest test-run-chains-diagnostics-slots
+  (testing "accept-rates, tail-ess, elapsed-seconds, n-divergences populated"
+    (let ((cr (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                               :n-chains 2 :n-samples 50 :n-warmup 30)))
+      (ok (= (length (diag:chain-result-accept-rates cr)) 2))
+      (ok (every #'plusp (diag:chain-result-accept-rates cr)))
+      (ok (= (length (diag:chain-result-tail-ess cr)) 2))
+      (ok (every #'plusp (diag:chain-result-tail-ess cr)))
+      (ok (>= (diag:chain-result-elapsed-seconds cr) 0.0d0))
+      (ok (>= (diag:chain-result-n-divergences cr) 0)))))
+
+(deftest test-run-chains-hmc-sampler
+  (testing ":hmc sampler path is reachable"
+    (let ((cr (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                               :n-chains 2 :n-samples 50 :n-warmup 30
+                               :sampler :hmc)))
+      (ok (diag:chain-result-p cr))
+      (ok (= (diag:chain-result-n-chains cr) 2)))))
+
+;;; -------------------------------------------------------------------------
 ;;; WAIC tests
 ;;; -------------------------------------------------------------------------
 

@@ -40,20 +40,31 @@ LOG-PDF-FN must accept a list of parameters and return a scalar log-probability
 using ad: arithmetic operations.
 N-PARAMS is the number of parameters to infer.
 
-Returns (values mu-list sigma-list elbo-history) where:
+Returns (values mu-list sigma-list elbo-history diagnostics) where:
   MU-LIST: posterior mean estimates
   SIGMA-LIST: posterior standard deviation estimates
-  ELBO-HISTORY: list of ELBO values over iterations."
-  (assert (and (integerp n-params) (plusp n-params)) nil
-          "vi: N-PARAMS must be a positive integer")
-  (assert (and (integerp n-iterations) (plusp n-iterations)) nil
-          "vi: N-ITERATIONS must be a positive integer")
-  (assert (and (integerp n-elbo-samples) (plusp n-elbo-samples)) nil
-          "vi: N-ELBO-SAMPLES must be a positive integer")
-  (assert (> lr 0.0d0) nil "vi: LR must be a positive number")
+  ELBO-HISTORY: list of ELBO values over iterations
+  DIAGNOSTICS: an INFERENCE-DIAGNOSTICS struct with timing and summary stats."
+  (unless (and (integerp n-params) (plusp n-params))
+    (error 'invalid-parameter-error
+           :parameter :n-params :value n-params
+           :message "vi: N-PARAMS must be a positive integer"))
+  (unless (and (integerp n-iterations) (plusp n-iterations))
+    (error 'invalid-parameter-error
+           :parameter :n-iterations :value n-iterations
+           :message "vi: N-ITERATIONS must be a positive integer"))
+  (unless (and (integerp n-elbo-samples) (plusp n-elbo-samples))
+    (error 'invalid-parameter-error
+           :parameter :n-elbo-samples :value n-elbo-samples
+           :message "vi: N-ELBO-SAMPLES must be a positive integer"))
+  (unless (> lr 0.0d0)
+    (error 'invalid-parameter-error
+           :parameter :lr :value lr
+           :message "vi: LR must be a positive number"))
   ;; Variational parameters: [mu_1..mu_n, log_sigma_1..log_sigma_n]
   ;; packed as a flat list of length 2*n-params
   (let* ((*log-pdf-error-warned-p* nil)
+         (start-time (get-internal-real-time))
          (n-var-params (* 2 n-params))
          (var-params (make-list n-var-params :initial-element 0.0d0))
          (adam-state (opt:make-adam-state n-var-params))
@@ -129,4 +140,13 @@ Returns (values mu-list sigma-list elbo-history) where:
                                    (sb-ext:float-infinity-p m)))
                   mu-list)
         (warn "vi: Some mu values are non-finite. Results may be unreliable."))
-      (values mu-list sigma-list (nreverse elbo-history)))))
+      (values mu-list sigma-list (nreverse elbo-history)
+              (make-inference-diagnostics
+               :accept-rate 0.0d0       ; not applicable for VI
+               :n-divergences 0
+               :final-step-size (coerce lr 'double-float)
+               :n-samples n-iterations
+               :n-warmup 0
+               :elapsed-seconds (/ (float (- (get-internal-real-time) start-time)
+                                          0.0d0)
+                                   internal-time-units-per-second))))))

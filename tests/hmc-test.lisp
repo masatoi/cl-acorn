@@ -51,3 +51,48 @@
         (declare (ignore accept-rate))
         (let ((mean (/ (reduce #'+ samples :key #'first) 2000)))
           (ok (approx= mean 3.0d0 0.2d0)))))))
+
+(deftest test-hmc-leapfrog-step
+  (testing "leapfrog-step performs a single integration step"
+    (let* ((log-pdf (lambda (p) (ad:* -0.5d0 (ad:* (first p) (first p)))))
+           (q '(1.0d0))
+           (p-mom '(0.5d0)))
+      (multiple-value-bind (q-new p-new log-pdf-new grad-new)
+          (cl-acorn.inference::leapfrog-step log-pdf q p-mom 0.1d0)
+        (declare (ignore log-pdf-new grad-new))
+        ;; After one step, position should have moved
+        (ok (not (approx= (first q-new) 1.0d0 1d-10)))
+        ;; Momentum should have changed
+        (ok (not (approx= (first p-new) 0.5d0 1d-10)))))))
+
+(deftest test-hmc-adapt-step-size
+  (testing "HMC with step-size adaptation rescues a bad initial step-size"
+    ;; Use a deliberately bad step-size (1.0) which would give terrible
+    ;; accept rate without adaptation
+    (let* ((log-pdf (lambda (p) (ad:* -0.5d0 (ad:* (first p) (first p)))))
+           (n-samples 1000)
+           (n-warmup 500))
+      (multiple-value-bind (samples accept-rate)
+          (infer:hmc log-pdf '(0.0d0)
+            :n-samples n-samples :n-warmup n-warmup
+            :step-size 1.0d0 :n-leapfrog 10
+            :adapt-step-size t)
+        ;; Adaptation should produce reasonable accept rate (> 40%)
+        (ok (> accept-rate 0.4d0))
+        ;; Mean should still be approximately correct
+        (let ((mean (/ (reduce #'+ samples :key #'first) n-samples)))
+          (ok (approx= mean 0.0d0 0.2d0)))))))
+
+(deftest test-hmc-adapt-backward-compat
+  (testing "HMC without adapt-step-size flag behaves as before"
+    (let* ((log-pdf (lambda (p) (ad:* -0.5d0 (ad:* (first p) (first p)))))
+           (n-samples 500)
+           (n-warmup 200))
+      ;; Good step-size, no adaptation - should work fine
+      (multiple-value-bind (samples accept-rate)
+          (infer:hmc log-pdf '(0.0d0)
+            :n-samples n-samples :n-warmup n-warmup
+            :step-size 0.1d0 :n-leapfrog 20)
+        (ok (> accept-rate 0.5d0))
+        (let ((mean (/ (reduce #'+ samples :key #'first) n-samples)))
+          (ok (approx= mean 0.0d0 0.2d0)))))))

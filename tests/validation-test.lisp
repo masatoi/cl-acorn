@@ -181,6 +181,40 @@
     (testing "hmc signals error for non-integer n-leapfrog"
       (ok (signals (infer:hmc dummy-fn '(0.0d0) :n-leapfrog 5.5d0))))))
 
+;;; --- NUTS validation ---
+
+(deftest test-nuts-validates-inputs
+  (let ((dummy-fn (lambda (params)
+                    (declare (ignore params))
+                    0.0d0)))
+    (testing "nuts signals error for empty initial-params"
+      (ok (signals (infer:nuts dummy-fn '()))))
+    (testing "nuts signals error for n-samples = 0"
+      (ok (signals (infer:nuts dummy-fn '(0.0d0) :n-samples 0))))
+    (testing "nuts signals error for non-positive step-size"
+      (ok (signals (infer:nuts dummy-fn '(0.0d0) :step-size 0.0d0))))
+    (testing "nuts signals error for non-positive max-tree-depth"
+      (ok (signals (infer:nuts dummy-fn '(0.0d0) :max-tree-depth 0))))
+    (testing "nuts signals error for non-integer max-tree-depth"
+      (ok (signals (infer:nuts dummy-fn '(0.0d0) :max-tree-depth 2.5d0))))))
+
+;;; --- VI validation ---
+
+(deftest test-vi-validates-inputs
+  (let ((dummy-fn (lambda (params)
+                    (declare (ignore params))
+                    0.0d0)))
+    (testing "vi signals error for n-params = 0"
+      (ok (signals (infer:vi dummy-fn 0))))
+    (testing "vi signals error for non-integer n-params"
+      (ok (signals (infer:vi dummy-fn 1.5d0))))
+    (testing "vi signals error for n-iterations = 0"
+      (ok (signals (infer:vi dummy-fn 1 :n-iterations 0))))
+    (testing "vi signals error for non-positive lr"
+      (ok (signals (infer:vi dummy-fn 1 :lr 0.0d0))))
+    (testing "vi signals error for n-elbo-samples = 0"
+      (ok (signals (infer:vi dummy-fn 1 :n-elbo-samples 0))))))
+
 ;;; --- Optimizer validation ---
 
 (deftest test-sgd-step-validates-lengths

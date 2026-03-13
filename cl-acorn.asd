@@ -36,7 +36,10 @@
                   :serial t
                   :components
                   ((:file "package")
-                   (:file "hmc"))))))
+                   (:file "dual-avg")
+                   (:file "hmc")
+                   (:file "nuts")
+                   (:file "vi"))))))
   :description "Automatic differentiation and probabilistic inference building blocks"
   :in-order-to ((test-op (test-op "cl-acorn/tests"))))
 
@@ -60,6 +63,8 @@
                  (:file "distributions-test")
                  (:file "optimizers-test")
                  (:file "hmc-test")
+                 (:file "nuts-test")
+                 (:file "vi-test")
                  (:file "validation-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))

@@ -2,4 +2,6 @@
   (:nicknames #:infer)
   (:use #:cl)
   (:export
-   #:hmc))
+   #:hmc
+   #:nuts
+   #:vi))

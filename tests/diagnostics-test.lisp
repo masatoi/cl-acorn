@@ -258,9 +258,9 @@
         (ok (= (length k-hats) (length data)))))))
 
 (deftest test-loo-k-hats-mostly-reliable
-  (testing "k-hats < 0.7 for majority of data points with well-specified normal model"
-    (let* (;; 100 samples near the true mu=0
-           (samples (list (loop repeat 100
+  (testing "k-hats < 0.5 for majority of data points with well-specified normal model"
+    (let* (;; 300 samples near the true mu=0
+           (samples (list (loop repeat 300
                                 collect (list (cl-acorn.distributions:normal-sample
                                                :mu 0.0d0 :sigma 0.2d0)))))
            (cr (make-trivial-chain-result samples))
@@ -273,7 +273,7 @@
       (multiple-value-bind (loo-val p-loo k-hats)
           (diag:loo cr log-lik-fn data)
         (declare (ignore loo-val p-loo))
-        (let ((reliable-count (count-if (lambda (k) (< k 0.7d0)) k-hats)))
+        (let ((reliable-count (count-if (lambda (k) (< k 0.5d0)) k-hats)))
           (ok (> reliable-count (floor (length data) 2))))))))
 
 (deftest test-loo-lower-for-correct-model

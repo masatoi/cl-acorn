@@ -91,14 +91,18 @@ Returns (values normalized-weights k-hat) where:
     (when (> k-hat 0.0d0)
       (let* ((tail-mean (/ (reduce #'+ tail-vals) (float m 0.0d0)))
              (sigma (max 1d-300 (* tail-mean k-hat)))
-             (tail-rank 0))
-        (loop for i from 0 below s do
-          (when (>= (aref raw-w i) tail-threshold)
-            (incf tail-rank)
-            (let* ((q (/ (- (float tail-rank 0.0d0) 0.5d0) (float m 0.0d0)))
-                   (z (/ (* sigma (- (expt q (- k-hat)) 1.0d0)) k-hat)))
-              (setf (aref smoothed-w i)
-                    (min z (aref sorted-w (1- s)))))))))
+             (tail-indices
+               (loop for i from 0 below s
+                     when (>= (aref raw-w i) tail-threshold)
+                     collect i))
+             (sorted-tail-indices
+               (sort tail-indices #'< :key (lambda (i) (aref raw-w i)))))
+        (loop for rank from 1
+              for idx in sorted-tail-indices
+              do (let* ((q (/ (- (float rank 0.0d0) 0.5d0) (float m 0.0d0)))
+                        (z (/ (* sigma (- (expt q (- k-hat)) 1.0d0)) k-hat)))
+                   (setf (aref smoothed-w idx)
+                         (min z (aref sorted-w (1- s))))))))
     (let* ((total (reduce #'+ smoothed-w))
            (denom (max total 1d-300)))
       (values (map 'list (lambda (w) (/ w denom)) smoothed-w)

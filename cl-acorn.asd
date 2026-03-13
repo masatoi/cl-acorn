@@ -40,7 +40,14 @@
                    (:file "dual-avg")
                    (:file "hmc")
                    (:file "nuts")
-                   (:file "vi"))))))
+                   (:file "vi")))
+                 (:module "diagnostics"
+                  :serial t
+                  :components
+                  ((:file "package")
+                   (:file "chains")
+                   (:file "convergence")
+                   (:file "model-comparison"))))))
   :description "Automatic differentiation and probabilistic inference building blocks"
   :in-order-to ((test-op (test-op "cl-acorn/tests"))))
 
@@ -68,7 +75,8 @@
                  (:file "vi-test")
                  (:file "validation-test")
                  (:file "conditions-test")
-                 (:file "inference-diagnostics-test"))))
+                 (:file "inference-diagnostics-test")
+                 (:file "diagnostics-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))
 

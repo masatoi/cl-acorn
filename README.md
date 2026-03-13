@@ -29,7 +29,7 @@ Both modes use the same arithmetic operators (`ad:+`, `ad:sin`, etc.) -- CLOS di
 
 ## Installation
 
-cl-acorn has no dependencies beyond ANSI Common Lisp. Clone this repository to a location visible to ASDF/Quicklisp:
+The ASDF system has no external library dependencies. Clone this repository to a location visible to ASDF/Quicklisp:
 
 ```bash
 cd ~/common-lisp/  # or ~/quicklisp/local-projects/
@@ -39,6 +39,8 @@ git clone https://github.com/masatoi/cl-acorn.git
 ```lisp
 (ql:quickload :cl-acorn)
 ```
+
+The current inference implementation uses SBCL floating-point utilities internally, so SBCL is the primary tested runtime.
 
 ## API Reference
 
@@ -105,6 +107,11 @@ Computes `H*v` where `H` is the Hessian of scalar `fn` at `params`. Uses forward
 
 All symbols are exported from `cl-acorn.distributions` (nickname: `dist`). Log-PDF functions are AD-transparent -- parameters accept dual numbers and tape-nodes for automatic differentiation.
 
+| Utility | Description |
+|---------|-------------|
+| `dist:log-gammaln` | Log gamma function helper used by several distributions |
+| `dist:+log-pdf-sentinel+` | Large negative finite sentinel returned by some out-of-support log-PDF paths |
+
 | Distribution | Log-PDF | Sample |
 |-------------|---------|--------|
 | Normal | `(dist:normal-log-pdf x :mu 0 :sigma 1)` | `(dist:normal-sample ...)` |
@@ -129,7 +136,9 @@ All symbols are exported from `cl-acorn.optimizers` (nickname: `opt`).
 (opt:adam-step params grads *state* :lr 0.001d0)
 ```
 
-### Bayesian Inference (HMC)
+`opt:adam-step` updates the Adam state in place and returns a new parameter list.
+
+### Bayesian Inference
 
 All symbols are exported from `cl-acorn.inference` (nickname: `infer`).
 
@@ -137,8 +146,32 @@ All symbols are exported from `cl-acorn.inference` (nickname: `infer`).
 (infer:hmc log-pdf-fn initial-params
   :n-samples 1000 :n-warmup 500
   :step-size 0.01d0 :n-leapfrog 10)
-;; => (values samples accept-rate)
+;; => (values samples accept-rate diagnostics)
 ```
+
+```lisp
+(infer:nuts log-pdf-fn initial-params
+  :n-samples 1000 :n-warmup 500
+  :step-size 0.01d0 :max-tree-depth 10)
+;; => (values samples accept-rate diagnostics)
+```
+
+```lisp
+(infer:vi log-pdf-fn n-params
+  :n-iterations 1000 :n-elbo-samples 10 :lr 0.01d0)
+;; => (values mu-list sigma-list elbo-history diagnostics)
+```
+
+`infer:hmc` supports optional `:adapt-step-size`, `infer:nuts` adapts step size by default, and both return an `infer:inference-diagnostics` struct as their third value. `infer:vi` returns posterior means, posterior standard deviations, ELBO history, and diagnostics.
+
+Common exported condition and restart APIs include:
+
+| Category | Symbols |
+|----------|---------|
+| Errors | `infer:invalid-parameter-error`, `infer:log-pdf-domain-error`, `infer:invalid-initial-params-error`, `infer:non-finite-gradient-error` |
+| Warnings | `infer:high-divergence-warning` |
+| Restarts | `infer:use-fallback-params`, `infer:return-empty-samples`, `infer:continue-with-warnings` |
+| Diagnostics | `infer:inference-diagnostics`, `infer:diagnostics-accept-rate`, `infer:diagnostics-n-divergences`, `infer:diagnostics-final-step-size`, `infer:diagnostics-n-samples`, `infer:diagnostics-n-warmup`, `infer:diagnostics-elapsed-seconds` |
 
 ## Usage Patterns
 
@@ -222,12 +255,13 @@ AD propagates through arbitrary program structures -- loops, accumulators, condi
             (dist:normal-log-pdf mu :mu 0.0d0 :sigma 10.0d0)
             (dist:normal-log-pdf log-sigma :mu 0.0d0 :sigma 2.0d0)))))
 
-(multiple-value-bind (samples accept-rate)
+(multiple-value-bind (samples accept-rate diagnostics)
     (infer:hmc #'model-log-pdf '(0.0d0 0.0d0)
       :n-samples 2000 :n-warmup 500
       :step-size 0.01d0 :n-leapfrog 20)
   ;; samples: list of (mu, log-sigma) parameter vectors
   ;; accept-rate: fraction of accepted proposals
+  ;; diagnostics: inference summary struct
   )
 ```
 
@@ -245,6 +279,9 @@ The `examples/` directory contains complete, runnable demonstrations:
 | [06-pid-control](examples/06-pid-control/) | PID controller auto-tuning by differentiating through simulation |
 | [07-signal-processing](examples/07-signal-processing/) | FIR filter coefficient optimization |
 | [08-reverse-neural-network](examples/08-reverse-neural-network/) | MLP classifier trained with reverse-mode AD (1 backward pass vs 67 forward passes) |
+| [09-hmc-bayes-regression](examples/09-hmc-bayes-regression/) | Bayesian linear regression with Hamiltonian Monte Carlo |
+| [10-nuts-bayes-regression](examples/10-nuts-bayes-regression/) | Bayesian linear regression with the No-U-Turn Sampler |
+| [11-vi-bayes-regression](examples/11-vi-bayes-regression/) | Bayesian linear regression with mean-field variational inference |
 
 Run any example:
 
@@ -254,7 +291,7 @@ Run any example:
 
 ## Running Tests
 
-cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (136 tests).
+cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (currently 184 tests).
 
 ```bash
 rove cl-acorn.asd

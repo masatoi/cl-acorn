@@ -25,18 +25,16 @@ Usage:
 
   (let ((inf-results (run-inference-benchmarks)))
     (format t "~%[Inference]~%")
-    (format t "~30A | ~12A | ~12A~%"
-            "Task" "us/sample" "samples/sec")
-    (format t "~30A-+-~12A-+-~12A~%"
+    (format t "~30A | ~12A |~%"
+            "Task" "samples/sec")
+    (format t "~30A-+-~12A-|~%"
             (make-string 30 :initial-element #\-)
-            (make-string 12 :initial-element #\-)
             (make-string 12 :initial-element #\-))
     (dolist (r inf-results)
       (let ((sps (if (> (bench-result-mean-us r) 0.0d0)
                      (/ 1.0d6 (bench-result-mean-us r))
                      0.0d0)))
-        (format t "~30A | ~12,2F | ~12,1F~%"
+        (format t "~30A | ~12,1F |~%"
                 (bench-result-name r)
-                (bench-result-mean-us r)
                 sps))))
   (values))

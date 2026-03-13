@@ -15,9 +15,7 @@
 (defun time-batch (thunk n-runs)
   "Run THUNK N-RUNS times and return mean microseconds per call."
   (let ((t0 (get-internal-real-time)))
-    (dotimes (i n-runs)
-      (declare (ignore i))
-      (funcall thunk))
+    (loop repeat n-runs do (funcall thunk))
     (let ((elapsed (- (get-internal-real-time) t0)))
       (* 1.0d6
          (/ (float elapsed 0.0d0)
@@ -30,27 +28,28 @@
   "Benchmark BODY, returning a BENCH-RESULT.
 N-WARMUP discarded runs, then N-TRIALS batches of N-RUNS each.
 Mean/min/max are computed across the trial batch-means."
-  `(let ((thunk (lambda () ,@body)))
-     ;; warmup
-     (dotimes (i ,n-warmup)
-       (declare (ignore i))
-       (funcall thunk))
-     ;; measure gc per run
-     (let ((gc-start (sb-ext:get-bytes-consed)))
-       (dotimes (i ,n-runs)
-         (declare (ignore i))
-         (funcall thunk))
-       (let* ((gc-bytes-per-run
-               (floor (- (sb-ext:get-bytes-consed) gc-start) ,n-runs))
-              (trial-means
-               (loop repeat ,n-trials
-                     collect (time-batch thunk ,n-runs))))
-         (make-bench-result
-          :name ,name
-          :mean-us (/ (reduce #'+ trial-means) (float ,n-trials 0.0d0))
-          :min-us  (reduce #'min trial-means)
-          :max-us  (reduce #'max trial-means)
-          :gc-bytes gc-bytes-per-run)))))
+  (let ((thunk-var        (gensym "THUNK"))
+        (gc-start-var     (gensym "GC-START"))
+        (gc-bytes-var     (gensym "GC-BYTES"))
+        (trial-means-var  (gensym "TRIAL-MEANS")))
+    `(let ((,thunk-var (lambda () ,@body)))
+       ;; warmup
+       (loop repeat ,n-warmup do (funcall ,thunk-var))
+       ;; measure gc per run
+       (let ((,gc-start-var (sb-ext:get-bytes-consed)))
+         (loop repeat ,n-runs do (funcall ,thunk-var))
+         (let* ((,gc-bytes-var
+                 (floor (- (sb-ext:get-bytes-consed) ,gc-start-var) ,n-runs))
+                (,trial-means-var
+                 (loop repeat ,n-trials
+                       collect (time-batch ,thunk-var ,n-runs))))
+           (make-bench-result
+            :name ,name
+            :mean-us (/ (reduce #'+ ,trial-means-var)
+                        (float ,n-trials 0.0d0))
+            :min-us  (reduce #'min ,trial-means-var)
+            :max-us  (reduce #'max ,trial-means-var)
+            :gc-bytes ,gc-bytes-var))))))
 
 ;;; Table printers
 

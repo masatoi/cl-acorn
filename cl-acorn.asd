@@ -59,6 +59,7 @@
                  (:file "gradient-test")
                  (:file "distributions-test")
                  (:file "optimizers-test")
-                 (:file "hmc-test"))))
+                 (:file "hmc-test")
+                 (:file "validation-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))

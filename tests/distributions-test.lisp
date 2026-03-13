@@ -76,7 +76,7 @@
 
 (deftest test-uniform-log-pdf-out-of-bounds
   (testing "uniform log-pdf returns very negative value out of bounds"
-    (ok (< (dist:uniform-log-pdf -1.0d0 :low 0.0d0 :high 1.0d0) -1d100))))
+    (ok (<= (dist:uniform-log-pdf -1.0d0 :low 0.0d0 :high 1.0d0) -1d100))))
 
 (deftest test-uniform-sample-range
   (testing "uniform samples stay within bounds"

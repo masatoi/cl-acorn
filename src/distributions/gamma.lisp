@@ -5,6 +5,12 @@
 SHAPE must be a positive number (not AD-differentiable).
 X and RATE may be AD values (dual or tape-node).
 Returns (shape-1)*log(x) - rate*x + shape*log(rate) - logΓ(shape)."
+  (assert (> (coerce shape 'double-float) 0.0d0) nil
+          "gamma-log-pdf: SHAPE must be positive")
+  (when (<= (coerce (real-value x) 'double-float) 0.0d0)
+    (return-from gamma-log-pdf +log-pdf-sentinel+))
+  (when (<= (coerce (real-value rate) 'double-float) 0.0d0)
+    (return-from gamma-log-pdf +log-pdf-sentinel+))
   (let ((k (coerce shape 'double-float)))
     (ad:- (ad:+ (ad:* (- k 1.0d0) (ad:log x))
                 (ad:* k (ad:log rate)))
@@ -14,6 +20,8 @@ Returns (shape-1)*log(x) - rate*x + shape*log(rate) - logΓ(shape)."
 (defun gamma-sample (&key (shape 1.0d0) (rate 1.0d0))
   "Sample from Gamma(shape, rate) using Marsaglia-Tsang method.
 Returns a double-float."
+  (assert (> shape 0) nil "gamma-sample: SHAPE must be positive")
+  (assert (> rate 0) nil "gamma-sample: RATE must be positive")
   (let ((k (coerce shape 'double-float))
         (r (coerce rate 'double-float)))
     (if (< k 1.0d0)

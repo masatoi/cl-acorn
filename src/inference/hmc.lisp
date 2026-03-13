@@ -41,6 +41,15 @@ using ad: arithmetic operations (for gradient computation via ad:gradient).
 INITIAL-PARAMS is a list of starting parameter values.
 Returns (values samples accept-rate) where samples is a list of parameter lists
 and accept-rate is the fraction of accepted proposals after warmup."
+  (assert (and (listp initial-params) (plusp (length initial-params))) nil
+          "hmc: INITIAL-PARAMS must be a non-empty list")
+  (assert (and (integerp n-samples) (plusp n-samples)) nil
+          "hmc: N-SAMPLES must be a positive integer")
+  (assert (and (integerp n-warmup) (not (minusp n-warmup))) nil
+          "hmc: N-WARMUP must be a non-negative integer")
+  (assert (> step-size 0.0d0) nil "hmc: STEP-SIZE must be a positive number")
+  (assert (and (integerp n-leapfrog) (plusp n-leapfrog)) nil
+          "hmc: N-LEAPFROG must be a positive integer")
   (let ((current-q (mapcar (lambda (x) (coerce x 'double-float)) initial-params))
         (n-dim (length initial-params))
         (samples nil)

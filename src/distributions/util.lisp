@@ -21,11 +21,26 @@ to avoid SBCL's DEFCONSTANT redefinition error on arrays.")
 (defconstant +log-2pi/2+ (* 0.5d0 (log (* 2.0d0 pi)))
   "Precomputed 0.5 * log(2 * pi).")
 
+(defconstant +log-pdf-sentinel+ -1d100
+  "Sentinel value for out-of-domain log-pdf evaluations.
+Large enough to guarantee rejection in Metropolis steps, but safe to
+sum across multiple terms without FLOATING-POINT-OVERFLOW (unlike
+most-negative-double-float which overflows when two values are added).")
+
+(defun real-value (x)
+  "Extract plain numeric value from X (dual, tape-node, or number)."
+  (typecase x
+    (ad:dual (ad:dual-real x))
+    (ad:tape-node (let ((v (ad:node-value x)))
+                    (if (typep v 'ad:dual) (ad:dual-real v) v)))
+    (t x)))
+
 (defun log-gammaln (z)
   "Log of the gamma function via Lanczos approximation.
 Z must be a positive real number. Returns a double-float.
 Used for normalization constants in gamma, beta, and poisson distributions."
   (let ((z (coerce z 'double-float)))
+    (assert (> z 0.0d0) nil "log-gammaln: Z must be a positive real number")
     (if (< z 0.5d0)
         ;; Reflection formula: Γ(z) = π / (sin(πz) * Γ(1-z))
         (- (log (/ pi (sin (* pi z))))

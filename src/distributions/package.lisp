@@ -4,6 +4,7 @@
   (:export
    ;; Utilities
    #:log-gammaln
+   #:+log-pdf-sentinel+
    ;; Normal
    #:normal-log-pdf #:normal-sample
    ;; Gamma

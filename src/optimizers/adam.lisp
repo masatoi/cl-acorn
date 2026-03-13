@@ -21,6 +21,16 @@ Initializes moment estimates to zero."
   "Adam optimizer step. Updates STATE in-place (m, v, step counter).
 Returns a new list of updated parameters.
 PARAMS and GRADS are lists of numbers of equal length."
+  (assert (= (length params) (length grads)) nil
+          "adam-step: PARAMS and GRADS must have equal length")
+  (assert (= (length params) (length (adam-state-m state))) nil
+          "adam-step: PARAMS length must match state dimensionality")
+  (assert (> lr 0) nil "adam-step: LR must be positive")
+  (assert (and (>= beta1 0) (< beta1 1)) nil
+          "adam-step: BETA1 must be in [0, 1)")
+  (assert (and (>= beta2 0) (< beta2 1)) nil
+          "adam-step: BETA2 must be in [0, 1)")
+  (assert (> epsilon 0) nil "adam-step: EPSILON must be positive")
   (incf (adam-state-step state))
   (let ((t-step (adam-state-step state)))
     ;; Update biased first moment estimate: m <- beta1*m + (1-beta1)*g

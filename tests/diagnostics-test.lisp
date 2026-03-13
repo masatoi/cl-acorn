@@ -219,3 +219,97 @@
         ;; finite: not NaN (NaN /= NaN) and not +/-infinity
         (ok (and (= lppd lppd)
                  (< (abs lppd) (/ most-positive-double-float 2.0d0))))))))
+
+;;; -------------------------------------------------------------------------
+;;; PSIS-LOO tests
+;;; -------------------------------------------------------------------------
+
+(deftest test-loo-returns-three-values
+  (testing "loo returns three values: loo (double-float), p-loo (double-float), k-hats (list)"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 50
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 5 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (loo-val p-loo k-hats)
+          (diag:loo cr log-lik-fn data)
+        (ok (typep loo-val 'double-float))
+        (ok (typep p-loo 'double-float))
+        (ok (listp k-hats))))))
+
+(deftest test-loo-k-hats-length
+  (testing "k-hats list length equals the number of data points"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 50
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 7 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (loo-val p-loo k-hats)
+          (diag:loo cr log-lik-fn data)
+        (declare (ignore loo-val p-loo))
+        (ok (= (length k-hats) (length data)))))))
+
+(deftest test-loo-k-hats-mostly-reliable
+  (testing "k-hats < 0.7 for majority of data points with well-specified normal model"
+    (let* (;; 100 samples near the true mu=0
+           (samples (list (loop repeat 100
+                                collect (list (cl-acorn.distributions:normal-sample
+                                               :mu 0.0d0 :sigma 0.2d0)))))
+           (cr (make-trivial-chain-result samples))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           ;; 10 data points from N(0,1)
+           (data (loop repeat 10 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (loo-val p-loo k-hats)
+          (diag:loo cr log-lik-fn data)
+        (declare (ignore loo-val p-loo))
+        (let ((reliable-count (count-if (lambda (k) (< k 0.7d0)) k-hats)))
+          (ok (> reliable-count (floor (length data) 2))))))))
+
+(deftest test-loo-lower-for-correct-model
+  (testing "loo is lower for correctly specified model than misspecified model"
+    (let* (;; 10 observations from N(0,1)
+           (data (loop repeat 10 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0)))
+           ;; Model A: samples near mu=0 (correct)
+           (samples-a (list (loop repeat 50
+                                  collect (list (cl-acorn.distributions:normal-sample
+                                                 :mu 0.0d0 :sigma 0.1d0)))))
+           ;; Model B: samples near mu=5 (misspecified)
+           (samples-b (list (loop repeat 50
+                                  collect (list (cl-acorn.distributions:normal-sample
+                                                 :mu 5.0d0 :sigma 0.1d0)))))
+           (cr-a (make-trivial-chain-result samples-a))
+           (cr-b (make-trivial-chain-result samples-b))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0))))
+      (multiple-value-bind (loo-a) (diag:loo cr-a log-lik-fn data)
+        (multiple-value-bind (loo-b) (diag:loo cr-b log-lik-fn data)
+          (ok (< loo-a loo-b)))))))
+
+(deftest test-loo-p-loo-nonnegative
+  (testing "p-loo (effective number of parameters) is non-negative"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 50
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 5 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (loo-val p-loo k-hats)
+          (diag:loo cr log-lik-fn data)
+        (declare (ignore loo-val k-hats))
+        (ok (>= p-loo 0.0d0))))))

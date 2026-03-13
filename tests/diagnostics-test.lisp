@@ -46,3 +46,24 @@
                     (loop repeat 10 collect (list (+  10.0d0 (* 0.1d0 (- (random 10) 5)))))))
            (rhat (diag:r-hat chains)))
       (ok (> (first rhat) 1.1d0)))))
+
+(deftest test-bulk-ess-near-independent
+  (testing "bulk-ess > 10% of M*N for near-independent samples"
+    ;; 4 chains x 200 samples iid N(0,1) → ESS close to 800
+    (let* ((chains (loop repeat 4
+                         collect (loop repeat 200
+                                       collect (list (dist:normal-sample :mu 0.0d0 :sigma 1.0d0)))))
+           (ess (diag:bulk-ess chains)))
+      (ok (listp ess))
+      (ok (= (length ess) 1))
+      (ok (> (first ess) 80.0d0)))))   ; at least 10% of 800
+
+(deftest test-tail-ess-near-independent
+  (testing "tail-ess > 10% of M*N for near-independent samples"
+    (let* ((chains (loop repeat 4
+                         collect (loop repeat 200
+                                       collect (list (dist:normal-sample :mu 0.0d0 :sigma 1.0d0)))))
+           (tess (diag:tail-ess chains)))
+      (ok (listp tess))
+      (ok (= (length tess) 1))
+      (ok (> (first tess) 40.0d0)))))  ; tail ESS can be lower

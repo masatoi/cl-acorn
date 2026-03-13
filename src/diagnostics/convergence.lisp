@@ -50,3 +50,75 @@ Returns a list of double-float R-hat values, one per parameter."
   (let ((n-params (length (first (first chains)))))
     (loop for i from 0 below n-params
           collect (r-hat-1 (chain-param chains i)))))
+
+;;; ---- Bulk-ESS via autocorrelation -----------------------------------
+
+(defun autocorrelation (xs lag)
+  "Normalized autocorrelation of XS at LAG. Returns value in [-1, 1]."
+  (let* ((n (length xs))
+         (m (mean-of xs))
+         (v (variance-of xs)))
+    (if (< v 1d-15)
+        0.0d0
+        (let ((cov (loop for i from 0 below (- n lag)
+                         sum (* (- (nth i xs) m)
+                                (- (nth (+ i lag) xs) m)))))
+          (/ cov (* (float (- n lag) 0.0d0) v))))))
+
+(defun bulk-ess-1 (param-chains)
+  "Compute bulk ESS for a single parameter.
+PARAM-CHAINS: list of chains, each a list of double-float."
+  (let* ((n-chains (length param-chains))
+         (n        (length (first param-chains)))
+         (mn       (float (* n-chains n) 0.0d0))
+         (all-samples (apply #'append param-chains))
+         (rho-sum 0.0d0))
+    ;; Sum autocorrelations until they go negative (Geyer's initial monotone rule)
+    (loop for lag from 1 to (min 100 (1- n))
+          for rho = (autocorrelation all-samples lag)
+          while (> rho 0.0d0)
+          do (incf rho-sum rho))
+    (max 1.0d0 (/ mn (+ 1.0d0 (* 2.0d0 rho-sum))))))
+
+(defun bulk-ess (chains)
+  "Per-parameter bulk effective sample size.
+CHAINS: list of chains; each chain is a list of parameter vectors.
+Returns a list of double-float ESS values."
+  (let ((n-params (length (first (first chains)))))
+    (loop for i from 0 below n-params
+          collect (bulk-ess-1 (chain-param chains i)))))
+
+;;; ---- Tail-ESS via quantile indicators --------------------------------
+
+(defun indicator-ess (param-chains threshold)
+  "ESS of the indicator I(x <= THRESHOLD) across PARAM-CHAINS."
+  (let ((indicator-chains
+          (mapcar (lambda (chain)
+                    (mapcar (lambda (x) (if (<= x threshold) 1.0d0 0.0d0))
+                            chain))
+                  param-chains)))
+    (bulk-ess-1 indicator-chains)))
+
+(defun quantile (xs q)
+  "Compute quantile Q (in [0,1]) of list XS. Returns a value from XS."
+  (let* ((sorted (sort (copy-list xs) #'<))
+         (n      (length sorted))
+         (idx    (min (1- n) (floor (* q (float n 0.0d0))))))
+    (nth idx sorted)))
+
+(defun tail-ess-1 (param-chains)
+  "Compute tail ESS for a single parameter.
+Uses ESS of I(x<=Q25) and I(x<=Q75); returns their minimum."
+  (let* ((all-samples (apply #'append param-chains))
+         (q25 (quantile all-samples 0.25d0))
+         (q75 (quantile all-samples 0.75d0)))
+    (min (indicator-ess param-chains q25)
+         (indicator-ess param-chains q75))))
+
+(defun tail-ess (chains)
+  "Per-parameter tail effective sample size (25th/75th quantile indicators).
+CHAINS: list of chains; each chain is a list of parameter vectors.
+Returns a list of double-float tail-ESS values."
+  (let ((n-params (length (first (first chains)))))
+    (loop for i from 0 below n-params
+          collect (tail-ess-1 (chain-param chains i)))))

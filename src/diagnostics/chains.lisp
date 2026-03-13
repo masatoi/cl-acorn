@@ -51,10 +51,10 @@ ADAPT-STEP-SIZE: whether to adapt step size during warmup (default t)
 STEP-SIZE: initial step size (default 0.1)
 
 Returns a CHAIN-RESULT struct."
-  (let* ((t0             (get-internal-real-time))
-         (all-samples    (make-list n-chains))
-         (all-accept     (make-list n-chains))
-         (total-div      0))
+  (let ((t0             (get-internal-real-time))
+        (all-samples    (make-list n-chains))
+        (all-accept     (make-list n-chains))
+        (total-div      0))
     (loop for i from 0 below n-chains do
       (let* ((start (jitter-params initial-params))
              (runner
@@ -79,11 +79,11 @@ Returns a CHAIN-RESULT struct."
           (setf (nth i all-accept)  (float accept-rate 0.0d0))
           (incf total-div
                 (cl-acorn.inference:diagnostics-n-divergences diag)))))
-    (let* ((elapsed (/ (float (- (get-internal-real-time) t0) 0.0d0)
-                       (float internal-time-units-per-second 0.0d0)))
-           (rhat    (r-hat  all-samples))
-           (bess    (bulk-ess all-samples))
-           (tess    (tail-ess all-samples)))
+    (let ((elapsed (/ (float (- (get-internal-real-time) t0) 0.0d0)
+                      (float internal-time-units-per-second 0.0d0)))
+          (rhat    (r-hat  all-samples))
+          (bess    (bulk-ess all-samples))
+          (tess    (tail-ess all-samples)))
       (make-chain-result
        :samples          all-samples
        :n-chains         n-chains

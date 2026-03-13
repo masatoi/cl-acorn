@@ -19,8 +19,8 @@ Returns list of lists: one list per chain of double-float values."
 
 (defun variance-of (xs)
   "Sample variance (divides by N-1) of a list of numbers."
-  (let* ((n (length xs))
-         (m (mean-of xs)))
+  (let ((n (length xs))
+        (m (mean-of xs)))
     (if (<= n 1)
         0.0d0
         (/ (reduce (lambda (acc x) (+ acc (expt (- x m) 2)))

@@ -21,9 +21,9 @@
 (defun waic (chain-result log-likelihood-fn data)
   "Compute WAIC (Widely Applicable Information Criterion) from posterior samples.
 
+CHAIN-RESULT: output of RUN-CHAINS
 LOG-LIKELIHOOD-FN: (lambda (params data-point) -> double-float)
 DATA: sequence of data points (list or vector)
-CHAIN-RESULT: output of RUN-CHAINS
 
 Returns (values waic p-waic lppd) where:
   WAIC   = -2 * (lppd - p_waic)  -- lower is better

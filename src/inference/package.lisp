@@ -34,6 +34,7 @@
    #:inference-diagnostics
    #:inference-diagnostics-p
    #:make-inference-diagnostics
+   #:copy-inference-diagnostics
    #:diagnostics-accept-rate
    #:diagnostics-n-divergences
    #:diagnostics-final-step-size

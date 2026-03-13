@@ -6,13 +6,13 @@
 ;;; A log-pdf-fn that always returns +infinity (triggers initial-params error)
 (defun always-bad-log-pdf (params)
   (declare (ignore params))
-  sb-ext:double-float-positive-infinity)
+  (/ 1.0d0 0.0d0))
 
 ;;; A log-pdf-fn that is bad for large params but OK near zero
 (defun conditional-log-pdf (params)
   (let ((p (first params)))
     (if (> (abs p) 100.0d0)
-        sb-ext:double-float-positive-infinity
+        (/ 1.0d0 0.0d0)
         (ad:* -0.5d0 (ad:* p p)))))
 
 (deftest test-acorn-error-hierarchy

@@ -71,3 +71,17 @@
                  (:file "inference-diagnostics-test"))))
   :description "Test system for cl-acorn"
   :perform (test-op (op c) (symbol-call :rove :run c)))
+
+(defsystem "cl-acorn/benchmarks"
+  :author ""
+  :license "MIT"
+  :depends-on ("cl-acorn")
+  :components ((:module "benchmarks/cl"
+                :serial t
+                :components
+                ((:file "package")
+                 (:file "bench-utils")
+                 (:file "bench-ad")
+                 (:file "bench-distributions")
+                 (:file "bench-inference")
+                 (:file "run-all")))))

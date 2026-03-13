@@ -3,6 +3,9 @@
 (defvar +max-delta-energy+ 1000.0d0
   "Maximum energy difference before declaring divergence.")
 
+(defvar +high-divergence-threshold+ 0.10d0
+  "Warn when post-warmup divergence rate exceeds this fraction (default 10%).")
+
 (defun log-sum-exp (a b)
   "Numerically stable log(exp(a) + exp(b))."
   (let ((m (max a b)))
@@ -198,7 +201,9 @@ INITIAL-PARAMS is a list of starting parameter values.
 MAX-TREE-DEPTH limits the binary tree depth (max 2^depth leapfrog steps).
 When ADAPT-STEP-SIZE is true (default), uses dual averaging during warmup
 with target acceptance rate 0.80.
-Returns (values samples accept-rate)."
+Returns (values samples accept-rate diagnostics) where SAMPLES is a list of
+parameter lists, ACCEPT-RATE is the mean acceptance probability, and DIAGNOSTICS
+is an INFERENCE-DIAGNOSTICS struct with timing, divergence count, and step-size."
   (assert (and (listp initial-params) (consp initial-params)) nil
           "nuts: INITIAL-PARAMS must be a non-empty list")
   (assert (and (integerp n-samples) (plusp n-samples)) nil
@@ -218,17 +223,39 @@ Returns (values samples accept-rate)."
          (da-state (when (and adapt-step-size (plusp n-warmup))
                      (make-dual-avg-state step-size :target-accept 0.80d0)))
          (sum-accept 0.0d0)
-         (n-accept-total 0))
-    ;; Get initial log-pdf and gradient, validate finiteness
-    (multiple-value-bind (init-val init-grad)
-        (safe-gradient log-pdf-fn current-q)
-      (assert init-val nil
-              "nuts: LOG-PDF-FN returned non-finite value at INITIAL-PARAMS. ~
-               Ensure initial parameters are in the support of the distribution.")
-      (let ((current-log-pdf init-val)
-            (current-grad init-grad))
-        (with-float-traps-masked
-        (dotimes (iter total-iterations)
+         (n-accept-total 0)
+         (n-divergences 0)
+         (start-time (get-internal-real-time))
+         (current-log-pdf nil)
+         (current-grad nil))
+    ;; Validate initial params; offer restarts on failure
+    (block validate
+      (loop
+        (multiple-value-bind (val grad)
+            (safe-gradient log-pdf-fn current-q)
+          (when val
+            (setf current-log-pdf val current-grad grad)
+            (return-from validate))
+          (restart-case
+            (error 'invalid-initial-params-error
+                   :params (copy-list current-q)
+                   :message "LOG-PDF-FN returned non-finite value at INITIAL-PARAMS")
+            (use-fallback-params (new-params)
+              :report "Supply new initial params and retry"
+              :interactive (lambda ()
+                             (format *query-io*
+                                     "New initial params (a list of numbers): ")
+                             (list (read *query-io*)))
+              (setf current-q
+                    (mapcar (lambda (x) (coerce x 'double-float)) new-params)))
+            (return-empty-samples ()
+              :report "Return empty sample list"
+              (return-from nuts
+                (values '() 0.0d0
+                        (make-inference-diagnostics
+                         :n-samples 0 :n-warmup n-warmup))))))))
+    (with-float-traps-masked
+      (dotimes (iter total-iterations)
           ;; Sample random momentum
           (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
                  (initial-energy (- (compute-kinetic-energy current-p)
@@ -247,7 +274,8 @@ Returns (values samples accept-rate)."
                  (iter-n-alpha 0))
             ;; Build tree by doubling, extending trajectory from endpoints
             (let ((depth 0)
-                  (keep-going t))
+                  (keep-going t)
+                  (iter-diverged-p nil))
               (loop while (and keep-going (< depth max-tree-depth))
                     do (let* ((direction (if (< (random 1.0d0) 0.5d0) -1 1))
                               ;; Build subtree from appropriate trajectory endpoint
@@ -268,7 +296,8 @@ Returns (values samples accept-rate)."
                          (cond
                            ;; Subtree diverged: stop growing
                            ((tree-state-diverging-p tree)
-                            (setf keep-going nil))
+                            (setf keep-going nil
+                                  iter-diverged-p t))
                            (t
                             ;; Update trajectory endpoints from subtree
                             (if (= direction -1)
@@ -300,7 +329,10 @@ Returns (values samples accept-rate)."
                                       (no-u-turn-p q-minus p-minus
                                                    q-plus p-plus))
                               (setf keep-going nil))))
-                         (incf depth))))
+                         (incf depth)))
+              ;; Count divergences in sampling phase only
+              (when (and iter-diverged-p (>= iter n-warmup))
+                (incf n-divergences)))
             ;; Accumulate stats for adaptation
             (incf sum-accept iter-alpha-sum)
             (incf n-accept-total iter-n-alpha))
@@ -322,9 +354,31 @@ Returns (values samples accept-rate)."
                   n-accept-total 0))
           ;; Collect sample after warmup
           (when (>= iter n-warmup)
-            (push (copy-list current-q) samples))))))
+            (push (copy-list current-q) samples))))
+    ;; Warn if divergence rate exceeds threshold
+    (when (and (> n-divergences 0)
+               (> (/ (float n-divergences 0.0d0)
+                     (float (max 1 n-samples) 0.0d0))
+                  +high-divergence-threshold+))
+      (restart-case
+        (warn 'high-divergence-warning
+              :n-divergences n-divergences
+              :n-samples n-samples)
+        (continue-with-warnings ()
+          :report "Continue and return results despite high divergences"
+          nil)))
     ;; Compute average accept rate over sampling phase
     (let ((final-accept (if (> n-accept-total 0)
                             (/ sum-accept (coerce n-accept-total 'double-float))
                             0.0d0)))
-      (values (nreverse samples) final-accept))))
+      (values (nreverse samples)
+              final-accept
+              (make-inference-diagnostics
+               :accept-rate final-accept
+               :n-divergences n-divergences
+               :final-step-size step-size
+               :n-samples n-samples
+               :n-warmup n-warmup
+               :elapsed-seconds (/ (float (- (get-internal-real-time) start-time)
+                                          0.0d0)
+                                   internal-time-units-per-second))))))

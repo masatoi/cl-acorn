@@ -3,7 +3,7 @@
 (defvar +max-delta-energy+ 1000.0d0
   "Maximum energy difference before declaring divergence.")
 
-(defvar +high-divergence-threshold+ 0.10d0
+(defconstant +high-divergence-threshold+ 0.10d0
   "Warn when post-warmup divergence rate exceeds this fraction (default 10%).")
 
 (defun log-sum-exp (a b)
@@ -237,9 +237,9 @@ is an INFERENCE-DIAGNOSTICS struct with timing, divergence count, and step-size.
             (setf current-log-pdf val current-grad grad)
             (return-from validate))
           (restart-case
-            (error 'invalid-initial-params-error
-                   :params (copy-list current-q)
-                   :message "LOG-PDF-FN returned non-finite value at INITIAL-PARAMS")
+              (error 'invalid-initial-params-error
+                     :params (copy-list current-q)
+                     :message "LOG-PDF-FN returned non-finite value at INITIAL-PARAMS")
             (use-fallback-params (new-params)
               :report "Supply new initial params and retry"
               :interactive (lambda ()
@@ -256,114 +256,114 @@ is an INFERENCE-DIAGNOSTICS struct with timing, divergence count, and step-size.
                          :n-samples 0 :n-warmup n-warmup))))))))
     (with-float-traps-masked
       (dotimes (iter total-iterations)
-          ;; Sample random momentum
-          (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
-                 (initial-energy (- (compute-kinetic-energy current-p)
-                                    current-log-pdf))
-                 ;; Initialize trajectory endpoints from current state
-                 (q-minus (copy-list current-q))
-                 (p-minus (copy-list current-p))
-                 (grad-minus (copy-list current-grad))
-                 (q-plus (copy-list current-q))
-                 (p-plus (copy-list current-p))
-                 (grad-plus (copy-list current-grad))
-                 ;; Running log-sum-weight (initial state has weight 1 => log-weight 0)
-                 (running-log-sum-weight 0.0d0)
-                 ;; Per-iteration acceptance statistics
-                 (iter-alpha-sum 0.0d0)
-                 (iter-n-alpha 0))
-            ;; Build tree by doubling, extending trajectory from endpoints
-            (let ((depth 0)
-                  (keep-going t)
-                  (iter-diverged-p nil))
-              (loop while (and keep-going (< depth max-tree-depth))
-                    do (let* ((direction (if (< (random 1.0d0) 0.5d0) -1 1))
-                              ;; Build subtree from appropriate trajectory endpoint
-                              (tree (if (= direction -1)
-                                        (build-tree log-pdf-fn
-                                                    q-minus p-minus grad-minus
-                                                    current-log-pdf
-                                                    step-size direction depth
-                                                    initial-energy)
-                                        (build-tree log-pdf-fn
-                                                    q-plus p-plus grad-plus
-                                                    current-log-pdf
-                                                    step-size direction depth
-                                                    initial-energy))))
-                         ;; Track acceptance statistics
-                         (incf iter-alpha-sum (tree-state-alpha-sum tree))
-                         (incf iter-n-alpha (tree-state-n-alpha tree))
-                         (cond
-                           ;; Subtree diverged: stop growing
-                           ((tree-state-diverging-p tree)
-                            (setf keep-going nil
-                                  iter-diverged-p t))
-                           (t
-                            ;; Update trajectory endpoints from subtree
-                            (if (= direction -1)
-                                (setf q-minus (tree-state-q-minus tree)
-                                      p-minus (tree-state-p-minus tree)
-                                      grad-minus (tree-state-grad-minus tree))
-                                (setf q-plus (tree-state-q-plus tree)
-                                      p-plus (tree-state-p-plus tree)
-                                      grad-plus (tree-state-grad-plus tree)))
-                            ;; Multinomial sampling across depth levels.
-                            ;; Include turned subtrees: their states are valid.
-                            (when (> (tree-state-log-sum-weight tree)
-                                     most-negative-double-float)
-                              (let ((combined (log-sum-exp
-                                               running-log-sum-weight
-                                               (tree-state-log-sum-weight tree))))
-                                (when (< (log (max double-float-epsilon
-                                                   (random 1.0d0)))
-                                         (- (tree-state-log-sum-weight tree)
-                                            combined))
-                                  (setf current-q (tree-state-q-proposal tree)
-                                        current-log-pdf
-                                        (tree-state-log-pdf-proposal tree)
-                                        current-grad
-                                        (tree-state-grad-proposal tree)))
-                                (setf running-log-sum-weight combined)))
-                            ;; Check stopping: subtree turned or full trajectory U-turn
-                            (when (or (tree-state-turning-p tree)
-                                      (no-u-turn-p q-minus p-minus
-                                                   q-plus p-plus))
-                              (setf keep-going nil))))
-                         (incf depth)))
-              ;; Count divergences in sampling phase only
-              (when (and iter-diverged-p (>= iter n-warmup))
-                (incf n-divergences)))
-            ;; Accumulate stats for adaptation
-            (incf sum-accept iter-alpha-sum)
-            (incf n-accept-total iter-n-alpha))
-          ;; Step-size adaptation during warmup
-          (when (and da-state (< iter n-warmup))
-            (let ((iter-accept (if (> n-accept-total 0)
-                                   (/ sum-accept
-                                      (coerce n-accept-total 'double-float))
-                                   0.0d0)))
-              (setf step-size (dual-avg-update da-state iter-accept))
-              (setf sum-accept 0.0d0
-                    n-accept-total 0)))
-          ;; Finalize step-size at end of warmup
-          (when (and da-state (= iter (1- n-warmup)))
-            (setf step-size (dual-avg-final-step-size da-state)))
-          ;; Reset acceptance counters at warmup→sampling transition
-          (when (and (plusp n-warmup) (= iter (1- n-warmup)))
+        ;; Sample random momentum
+        (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
+               (initial-energy (- (compute-kinetic-energy current-p)
+                                  current-log-pdf))
+               ;; Initialize trajectory endpoints from current state
+               (q-minus (copy-list current-q))
+               (p-minus (copy-list current-p))
+               (grad-minus (copy-list current-grad))
+               (q-plus (copy-list current-q))
+               (p-plus (copy-list current-p))
+               (grad-plus (copy-list current-grad))
+               ;; Running log-sum-weight (initial state has weight 1 => log-weight 0)
+               (running-log-sum-weight 0.0d0)
+               ;; Per-iteration acceptance statistics
+               (iter-alpha-sum 0.0d0)
+               (iter-n-alpha 0))
+          ;; Build tree by doubling, extending trajectory from endpoints
+          (let ((depth 0)
+                (keep-going t)
+                (iter-diverged-p nil))
+            (loop while (and keep-going (< depth max-tree-depth))
+                  do (let* ((direction (if (< (random 1.0d0) 0.5d0) -1 1))
+                            ;; Build subtree from appropriate trajectory endpoint
+                            (tree (if (= direction -1)
+                                      (build-tree log-pdf-fn
+                                                  q-minus p-minus grad-minus
+                                                  current-log-pdf
+                                                  step-size direction depth
+                                                  initial-energy)
+                                      (build-tree log-pdf-fn
+                                                  q-plus p-plus grad-plus
+                                                  current-log-pdf
+                                                  step-size direction depth
+                                                  initial-energy))))
+                       ;; Track acceptance statistics
+                       (incf iter-alpha-sum (tree-state-alpha-sum tree))
+                       (incf iter-n-alpha (tree-state-n-alpha tree))
+                       (cond
+                         ;; Subtree diverged: stop growing
+                         ((tree-state-diverging-p tree)
+                          (setf keep-going nil
+                                iter-diverged-p t))
+                         (t
+                          ;; Update trajectory endpoints from subtree
+                          (if (= direction -1)
+                              (setf q-minus (tree-state-q-minus tree)
+                                    p-minus (tree-state-p-minus tree)
+                                    grad-minus (tree-state-grad-minus tree))
+                              (setf q-plus (tree-state-q-plus tree)
+                                    p-plus (tree-state-p-plus tree)
+                                    grad-plus (tree-state-grad-plus tree)))
+                          ;; Multinomial sampling across depth levels.
+                          ;; Include turned subtrees: their states are valid.
+                          (when (> (tree-state-log-sum-weight tree)
+                                   most-negative-double-float)
+                            (let ((combined (log-sum-exp
+                                             running-log-sum-weight
+                                             (tree-state-log-sum-weight tree))))
+                              (when (< (log (max double-float-epsilon
+                                                 (random 1.0d0)))
+                                       (- (tree-state-log-sum-weight tree)
+                                          combined))
+                                (setf current-q (tree-state-q-proposal tree)
+                                      current-log-pdf
+                                      (tree-state-log-pdf-proposal tree)
+                                      current-grad
+                                      (tree-state-grad-proposal tree)))
+                              (setf running-log-sum-weight combined)))
+                          ;; Check stopping: subtree turned or full trajectory U-turn
+                          (when (or (tree-state-turning-p tree)
+                                    (no-u-turn-p q-minus p-minus
+                                                 q-plus p-plus))
+                            (setf keep-going nil))))
+                       (incf depth)))
+            ;; Count divergences in sampling phase only
+            (when (and iter-diverged-p (>= iter n-warmup))
+              (incf n-divergences)))
+          ;; Accumulate stats for adaptation
+          (incf sum-accept iter-alpha-sum)
+          (incf n-accept-total iter-n-alpha))
+        ;; Step-size adaptation during warmup
+        (when (and da-state (< iter n-warmup))
+          (let ((iter-accept (if (> n-accept-total 0)
+                                 (/ sum-accept
+                                    (coerce n-accept-total 'double-float))
+                                 0.0d0)))
+            (setf step-size (dual-avg-update da-state iter-accept))
             (setf sum-accept 0.0d0
-                  n-accept-total 0))
-          ;; Collect sample after warmup
-          (when (>= iter n-warmup)
-            (push (copy-list current-q) samples))))
+                  n-accept-total 0)))
+        ;; Finalize step-size at end of warmup
+        (when (and da-state (= iter (1- n-warmup)))
+          (setf step-size (dual-avg-final-step-size da-state)))
+        ;; Reset acceptance counters at warmup→sampling transition
+        (when (and (plusp n-warmup) (= iter (1- n-warmup)))
+          (setf sum-accept 0.0d0
+                n-accept-total 0))
+        ;; Collect sample after warmup
+        (when (>= iter n-warmup)
+          (push (copy-list current-q) samples))))
     ;; Warn if divergence rate exceeds threshold
     (when (and (> n-divergences 0)
                (> (/ (float n-divergences 0.0d0)
                      (float (max 1 n-samples) 0.0d0))
                   +high-divergence-threshold+))
       (restart-case
-        (warn 'high-divergence-warning
-              :n-divergences n-divergences
-              :n-samples n-samples)
+          (warn 'high-divergence-warning
+                :n-divergences n-divergences
+                :n-samples n-samples)
         (continue-with-warnings ()
           :report "Continue and return results despite high divergences"
           nil)))

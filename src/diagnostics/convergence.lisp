@@ -63,7 +63,7 @@ Returns a list of double-float R-hat values, one per parameter."
         (let ((cov (loop for i from 0 below (- n lag)
                          sum (* (- (nth i xs) m)
                                 (- (nth (+ i lag) xs) m)))))
-          (/ cov (* (float (- n lag) 0.0d0) v))))))
+          (/ cov (* (float (1- n) 0.0d0) v))))))
 
 (defun bulk-ess-1 (param-chains)
   "Compute bulk ESS for a single parameter.
@@ -74,7 +74,7 @@ PARAM-CHAINS: list of chains, each a list of double-float."
          (all-samples (apply #'append param-chains))
          (rho-sum 0.0d0))
     ;; Sum autocorrelations until they go negative (Geyer's initial monotone rule)
-    (loop for lag from 1 to (min 100 (1- n))
+    (loop for lag from 1 to (min 100 (1- (length all-samples)))
           for rho = (autocorrelation all-samples lag)
           while (> rho 0.0d0)
           do (incf rho-sum rho))
@@ -116,7 +116,9 @@ Uses ESS of I(x<=Q25) and I(x<=Q75); returns their minimum."
          (indicator-ess param-chains q75))))
 
 (defun tail-ess (chains)
-  "Per-parameter tail effective sample size (25th/75th quantile indicators).
+  "Per-parameter tail effective sample size using Q0.25 and Q0.75 indicators.
+Returns the minimum of ESS(I(x<=Q0.25)) and ESS(I(x<=Q0.75)).
+Note: canonical Vehtari (2021) uses Q0.05/Q0.95 instead.
 CHAINS: list of chains; each chain is a list of parameter vectors.
 Returns a list of double-float tail-ESS values."
   (let ((n-params (length (first (first chains)))))

@@ -97,3 +97,34 @@
       (ok (search "warn" output))
       (ok (search "1.150" output))
       (ok (search "Total divergences: 2" output)))))
+
+(defvar *std-normal-2d*
+  (lambda (params)
+    (let ((x (first params)) (y (second params)))
+      (ad:+ (ad:* -0.5d0 (ad:* x x))
+            (ad:* -0.5d0 (ad:* y y))))))
+
+(deftest test-run-chains-returns-chain-result
+  (testing "run-chains on 2D std normal returns chain-result"
+    (let ((cr (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                               :n-chains 4 :n-samples 200 :n-warmup 100)))
+      (ok (diag:chain-result-p cr))
+      (ok (= (diag:chain-result-n-chains cr) 4))
+      (ok (= (diag:chain-result-n-samples cr) 200))
+      (ok (= (diag:chain-result-n-warmup cr) 100))
+      (ok (= (length (diag:chain-result-samples cr)) 4))
+      (ok (= (length (first (diag:chain-result-samples cr))) 200)))))
+
+(deftest test-run-chains-r-hat-converged
+  (testing "run-chains on 2D std normal has R-hat < 1.1"
+    (let ((cr (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                               :n-chains 4 :n-samples 500 :n-warmup 200)))
+      (ok (every (lambda (r) (< r 1.1d0))
+                 (diag:chain-result-r-hat cr))))))
+
+(deftest test-run-chains-ess-adequate
+  (testing "run-chains on 2D std normal has bulk-ESS > 100"
+    (let ((cr (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                               :n-chains 4 :n-samples 500 :n-warmup 200)))
+      (ok (every (lambda (e) (> e 100.0d0))
+                 (diag:chain-result-bulk-ess cr))))))

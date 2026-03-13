@@ -313,3 +313,58 @@
           (diag:loo cr log-lik-fn data)
         (declare (ignore loo-val k-hats))
         (ok (>= p-loo 0.0d0))))))
+
+;;; -------------------------------------------------------------------------
+;;; print-model-comparison tests
+;;; -------------------------------------------------------------------------
+
+(deftest test-print-model-comparison-output
+  (testing "print-model-comparison produces expected header and sections"
+    (let* (;; 10 observations from N(0,1)
+           (data (loop repeat 10 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0)))
+           ;; Model A: samples near mu=0 (correct)
+           (cr-a (make-trivial-chain-result
+                  (list (loop repeat 50
+                              collect (list (cl-acorn.distributions:normal-sample
+                                             :mu 0.0d0 :sigma 0.1d0))))))
+           ;; Model B: samples near mu=5 (misspecified)
+           (cr-b (make-trivial-chain-result
+                  (list (loop repeat 50
+                              collect (list (cl-acorn.distributions:normal-sample
+                                             :mu 5.0d0 :sigma 0.1d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (output (with-output-to-string (*standard-output*)
+                     (diag:print-model-comparison
+                      "model-a" cr-a log-lik-fn data
+                      "model-b" cr-b log-lik-fn data))))
+      (ok (search "Model comparison" output))
+      (ok (search "WAIC" output))
+      (ok (search "LOO" output))
+      (ok (search "Lower is better." output))
+      (ok (search "model-a" output))
+      (ok (search "model-b" output)))))
+
+(deftest test-print-model-comparison-correct-model-ranks-lower
+  (testing "correct model has lower WAIC and LOO than misspecified model"
+    (let* (;; 10 observations from N(0,1)
+           (data (loop repeat 10 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0)))
+           ;; Model A: samples near mu=0 (correct)
+           (cr-a (make-trivial-chain-result
+                  (list (loop repeat 50
+                              collect (list (cl-acorn.distributions:normal-sample
+                                             :mu 0.0d0 :sigma 0.1d0))))))
+           ;; Model B: samples near mu=5 (misspecified)
+           (cr-b (make-trivial-chain-result
+                  (list (loop repeat 50
+                              collect (list (cl-acorn.distributions:normal-sample
+                                             :mu 5.0d0 :sigma 0.1d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0))))
+      (multiple-value-bind (waic-a) (diag:waic cr-a log-lik-fn data)
+        (multiple-value-bind (waic-b) (diag:waic cr-b log-lik-fn data)
+          (ok (< waic-a waic-b)))))))

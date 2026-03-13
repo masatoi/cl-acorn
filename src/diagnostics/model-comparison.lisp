@@ -147,3 +147,43 @@ Returns (values loo p-loo k-hats) where:
     (values (float (* -2.0d0 loo-lpd) 0.0d0)
             (float (- lppd loo-lpd) 0.0d0)
             (nreverse k-hats))))
+
+;;; -------------------------------------------------------------------------
+;;; Model comparison table
+;;; -------------------------------------------------------------------------
+
+(defun print-model-comparison (&rest named-results)
+  "Print WAIC and LOO comparison table to *STANDARD-OUTPUT*.
+
+NAMED-RESULTS: alternating name/chain-result/log-lik-fn/data groups.
+Each group is: NAME (string) CHAIN-RESULT LOG-LIK-FN DATA.
+
+Lower WAIC/LOO = better predictive accuracy."
+  (assert (zerop (mod (length named-results) 4)) nil
+          "print-model-comparison: NAMED-RESULTS must be groups of 4 (name result log-lik-fn data)")
+  (let ((rows
+          (loop for i from 0 below (length named-results) by 4
+                collect
+                (let ((name   (nth i       named-results))
+                      (result (nth (+ i 1) named-results))
+                      (lik-fn (nth (+ i 2) named-results))
+                      (data   (nth (+ i 3) named-results)))
+                  (multiple-value-bind (waic-val p-waic lppd-w)
+                      (waic result lik-fn data)
+                    (declare (ignore lppd-w))
+                    (multiple-value-bind (loo-val p-loo k-hats)
+                        (loo result lik-fn data)
+                      (declare (ignore k-hats))
+                      (list name waic-val p-waic loo-val p-loo)))))))
+    (format t "Model comparison~%")
+    (format t "~55,,,'=A~%" "")
+    (format t "~15A | ~8A | ~6A | ~8A | ~5A~%"
+            "Model" "WAIC" "p_waic" "LOO" "p_loo")
+    (format t "~15,,,'-A-+-~8,,,'-A-+-~6,,,'-A-+-~8,,,'-A-+-~5,,,'-A~%"
+            "" "" "" "" "")
+    (dolist (row rows)
+      (destructuring-bind (name waic-val p-waic loo-val p-loo) row
+        (format t "~15A | ~8,1F | ~6,1F | ~8,1F | ~5,1F~%"
+                name waic-val p-waic loo-val p-loo)))
+    (format t "~55,,,'=A~%" "")
+    (format t "Lower is better.~%")))

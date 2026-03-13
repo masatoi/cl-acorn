@@ -179,6 +179,10 @@ and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats
                    :message "LOG-PDF-FN returned non-finite value at INITIAL-PARAMS")
             (use-fallback-params (new-params)
               :report "Supply new initial params and retry"
+              :interactive (lambda ()
+                             (format *query-io*
+                                     "New initial params (a list of numbers): ")
+                             (list (read *query-io*)))
               (setf current-q
                     (mapcar (lambda (x) (coerce x 'double-float)) new-params)))
             (return-empty-samples ()
@@ -188,48 +192,48 @@ and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats
                         (make-inference-diagnostics
                          :n-samples 0 :n-warmup n-warmup))))))))
     (with-float-traps-masked
-     (dotimes (iter total-iterations)
-      (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
-             (current-h (- (compute-kinetic-energy current-p) current-log-pdf)))
-        (multiple-value-bind (proposed-q proposed-p proposed-log-pdf)
-            (leapfrog log-pdf-fn current-q current-p step-size n-leapfrog)
-          (cond
-            ;; Diverged: reject proposal, adapt with accept-prob=0
-            ((null proposed-q)
-             (when (and da-state (< iter n-warmup))
-               (setf step-size (dual-avg-update da-state 0.0d0))))
-            ;; Current state non-finite: always accept finite proposals
-            ((not (finite-double-p current-h))
-             (setf current-q proposed-q
-                   current-log-pdf proposed-log-pdf)
-             (when (and da-state (< iter n-warmup))
-               (setf step-size (dual-avg-update da-state 1.0d0)))
-             (when (>= iter n-warmup)
-               (incf n-accepted)))
-            ;; Normal case: compute MH acceptance
-            (t
-             (let* ((proposed-h (- (compute-kinetic-energy proposed-p)
-                                   proposed-log-pdf))
-                    (log-accept-prob (- current-h proposed-h))
-                    (log-accept-prob (if (finite-double-p log-accept-prob)
-                                         log-accept-prob
-                                         most-negative-double-float))
-                    (accept-prob (min 1.0d0 (exp (min 0.0d0 log-accept-prob)))))
+      (dotimes (iter total-iterations)
+        (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
+               (current-h (- (compute-kinetic-energy current-p) current-log-pdf)))
+          (multiple-value-bind (proposed-q proposed-p proposed-log-pdf)
+              (leapfrog log-pdf-fn current-q current-p step-size n-leapfrog)
+            (cond
+              ;; Diverged: reject proposal, adapt with accept-prob=0
+              ((null proposed-q)
                (when (and da-state (< iter n-warmup))
-                 (setf step-size (dual-avg-update da-state accept-prob)))
-               (when (or (>= log-accept-prob 0.0d0)
-                         (< (log (max double-float-epsilon (random 1.0d0)))
-                            log-accept-prob))
-                 (setf current-q proposed-q
-                       current-log-pdf proposed-log-pdf)
-                 (when (>= iter n-warmup)
-                   (incf n-accepted))))))))
-      ;; Finalize step-size at end of warmup
-      (when (and da-state (= iter (1- n-warmup)))
-        (setf step-size (dual-avg-final-step-size da-state)))
-      ;; Collect sample after warmup
-      (when (>= iter n-warmup)
-        (push (copy-list current-q) samples))))
+                 (setf step-size (dual-avg-update da-state 0.0d0))))
+              ;; Current state non-finite: always accept finite proposals
+              ((not (finite-double-p current-h))
+               (setf current-q proposed-q
+                     current-log-pdf proposed-log-pdf)
+               (when (and da-state (< iter n-warmup))
+                 (setf step-size (dual-avg-update da-state 1.0d0)))
+               (when (>= iter n-warmup)
+                 (incf n-accepted)))
+              ;; Normal case: compute MH acceptance
+              (t
+               (let* ((proposed-h (- (compute-kinetic-energy proposed-p)
+                                     proposed-log-pdf))
+                      (log-accept-prob (- current-h proposed-h))
+                      (log-accept-prob (if (finite-double-p log-accept-prob)
+                                           log-accept-prob
+                                           most-negative-double-float))
+                      (accept-prob (min 1.0d0 (exp (min 0.0d0 log-accept-prob)))))
+                 (when (and da-state (< iter n-warmup))
+                   (setf step-size (dual-avg-update da-state accept-prob)))
+                 (when (or (>= log-accept-prob 0.0d0)
+                           (< (log (max double-float-epsilon (random 1.0d0)))
+                              log-accept-prob))
+                   (setf current-q proposed-q
+                         current-log-pdf proposed-log-pdf)
+                   (when (>= iter n-warmup)
+                     (incf n-accepted))))))))
+        ;; Finalize step-size at end of warmup
+        (when (and da-state (= iter (1- n-warmup)))
+          (setf step-size (dual-avg-final-step-size da-state)))
+        ;; Collect sample after warmup
+        (when (>= iter n-warmup)
+          (push (copy-list current-q) samples))))
     (let ((accept-rate (/ (coerce n-accepted 'double-float)
                           (coerce n-samples 'double-float))))
       (values (nreverse samples)

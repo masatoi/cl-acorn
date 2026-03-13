@@ -46,11 +46,24 @@ post-warmup samples and stored in the returned CHAIN-RESULT.
 
 LOG-PDF-FN: (lambda (params) -> number) using ad: arithmetic
 INITIAL-PARAMS: list of initial parameter values (numbers)
+N-CHAINS: number of independent chains to run (default 4)
+N-SAMPLES: post-warmup samples per chain (default 1000)
+N-WARMUP: warmup samples per chain, discarded before diagnostics (default 500)
 SAMPLER: :nuts (default) or :hmc
 ADAPT-STEP-SIZE: whether to adapt step size during warmup (default t)
 STEP-SIZE: initial step size (default 0.1)
 
 Returns a CHAIN-RESULT struct."
+  (assert (and (listp initial-params) (consp initial-params)) nil
+          "run-chains: INITIAL-PARAMS must be a non-empty list")
+  (assert (and (integerp n-chains) (plusp n-chains)) nil
+          "run-chains: N-CHAINS must be a positive integer")
+  (assert (and (integerp n-samples) (plusp n-samples)) nil
+          "run-chains: N-SAMPLES must be a positive integer")
+  (assert (and (integerp n-warmup) (not (minusp n-warmup))) nil
+          "run-chains: N-WARMUP must be a non-negative integer")
+  (assert (> step-size 0.0d0) nil
+          "run-chains: STEP-SIZE must be a positive number")
   (let ((t0             (get-internal-real-time))
         (all-samples    (make-list n-chains))
         (all-accept     (make-list n-chains))

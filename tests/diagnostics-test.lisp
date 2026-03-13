@@ -128,3 +128,94 @@
                                :n-chains 4 :n-samples 500 :n-warmup 200)))
       (ok (every (lambda (e) (> e 100.0d0))
                  (diag:chain-result-bulk-ess cr))))))
+
+;;; -------------------------------------------------------------------------
+;;; WAIC tests
+;;; -------------------------------------------------------------------------
+
+(defun make-trivial-chain-result (samples-list)
+  "Wrap SAMPLES-LIST (a list of per-chain sample lists) into a chain-result."
+  (diag:make-chain-result
+   :samples samples-list
+   :n-chains (length samples-list)
+   :n-samples (length (first samples-list))
+   :n-warmup 0
+   :r-hat nil
+   :bulk-ess nil
+   :tail-ess nil
+   :accept-rates nil
+   :n-divergences 0
+   :elapsed-seconds 0.0d0))
+
+(deftest test-waic-returns-three-values
+  (testing "waic returns three double-float values"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 20
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 5 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (waic-val p-waic lppd)
+          (diag:waic cr log-lik-fn data)
+        (ok (typep waic-val 'double-float))
+        (ok (typep p-waic 'double-float))
+        (ok (typep lppd 'double-float))))))
+
+(deftest test-waic-lower-for-correct-model
+  (testing "waic is lower for correctly specified model than misspecified model"
+    (let* (;; 10 observations from N(0,1)
+           (data (loop repeat 10 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0)))
+           ;; Model A: fixed samples near mu=0 (correct)
+           (samples-a (list (loop repeat 50
+                                  collect (list (cl-acorn.distributions:normal-sample
+                                                 :mu 0.0d0 :sigma 0.1d0)))))
+           ;; Model B: fixed samples near mu=5 (misspecified)
+           (samples-b (list (loop repeat 50
+                                  collect (list (cl-acorn.distributions:normal-sample
+                                                 :mu 5.0d0 :sigma 0.1d0)))))
+           (cr-a (make-trivial-chain-result samples-a))
+           (cr-b (make-trivial-chain-result samples-b))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0))))
+      (multiple-value-bind (waic-a) (diag:waic cr-a log-lik-fn data)
+        (multiple-value-bind (waic-b) (diag:waic cr-b log-lik-fn data)
+          (ok (< waic-a waic-b)))))))
+
+(deftest test-waic-p-waic-nonnegative
+  (testing "p_waic (effective parameters) is non-negative"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 30
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 5 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (waic-val p-waic lppd)
+          (diag:waic cr log-lik-fn data)
+        (declare (ignore waic-val lppd))
+        (ok (>= p-waic 0.0d0))))))
+
+(deftest test-waic-lppd-finite
+  (testing "lppd is finite (not NaN or +Inf)"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 30
+                            collect (list (cl-acorn.distributions:normal-sample
+                                          :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (loop repeat 5 collect
+                       (cl-acorn.distributions:normal-sample :mu 0.0d0 :sigma 1.0d0))))
+      (multiple-value-bind (waic-val p-waic lppd)
+          (diag:waic cr log-lik-fn data)
+        (declare (ignore waic-val p-waic))
+        ;; finite: not NaN (NaN /= NaN) and not +/-infinity
+        (ok (and (= lppd lppd)
+                 (< (abs lppd) (/ most-positive-double-float 2.0d0))))))))

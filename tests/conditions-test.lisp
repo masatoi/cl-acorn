@@ -8,10 +8,20 @@
   (declare (ignore params))
   (/ 1.0d0 0.0d0))
 
-;;; A log-pdf-fn that is bad for large params but OK near zero
+;;; A log-pdf-fn that is bad for large params but OK near zero.
+;;; The guard extracts the numeric value from any AD node type so it works
+;;; when called by ad:gradient (which passes tape-nodes) as well as with plain numbers.
+(defun ad-node-value (x)
+  "Extract the numeric value from X regardless of AD node type."
+  (cond
+    ((typep x 'ad:tape-node) (ad:node-value x))
+    ((typep x 'ad:dual) (ad:dual-real x))
+    (t (coerce x 'double-float))))
+
 (defun conditional-log-pdf (params)
-  (let ((p (first params)))
-    (if (> (abs p) 100.0d0)
+  (let* ((p (first params))
+         (p-val (ad-node-value p)))
+    (if (> (cl:abs p-val) 100.0d0)
         (/ 1.0d0 0.0d0)
         (ad:* -0.5d0 (ad:* p p)))))
 

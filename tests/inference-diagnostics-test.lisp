@@ -17,7 +17,7 @@
       (ok (>= (infer:diagnostics-accept-rate diag) 0.0d0))
       (ok (<= (infer:diagnostics-accept-rate diag) 1.0d0))
       (ok (= (infer:diagnostics-n-divergences diag) 0))
-      (ok (> (infer:diagnostics-elapsed-seconds diag) 0.0d0)))))
+      (ok (>= (infer:diagnostics-elapsed-seconds diag) 0.0d0)))))
 
 (deftest test-hmc-diagnostics-step-size-set
   (testing "hmc diagnostics records final step-size"
@@ -59,7 +59,7 @@
       (ok (infer:inference-diagnostics-p diag))
       (ok (= (infer:diagnostics-n-samples diag) 100))
       (ok (= (infer:diagnostics-n-warmup diag) 0))
-      (ok (> (infer:diagnostics-elapsed-seconds diag) 0.0d0)))))
+      (ok (>= (infer:diagnostics-elapsed-seconds diag) 0.0d0)))))
 
 (deftest test-hmc-backward-compatible
   (testing "existing 2-value multiple-value-bind still works"

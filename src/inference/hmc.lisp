@@ -138,8 +138,9 @@ LOG-PDF-FN must accept a list of parameters and return a scalar log-probability
 using ad: arithmetic operations (for gradient computation via ad:gradient).
 INITIAL-PARAMS is a list of starting parameter values.
 When ADAPT-STEP-SIZE is true, uses dual averaging to adapt step-size during warmup.
-Returns (values samples accept-rate) where samples is a list of parameter lists
-and accept-rate is the fraction of accepted proposals after warmup."
+Returns (values samples accept-rate diagnostics) where SAMPLES is a list of
+parameter lists, ACCEPT-RATE is the fraction of accepted proposals after warmup,
+and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats."
   (assert (and (listp initial-params) (consp initial-params)) nil
           "hmc: INITIAL-PARAMS must be a non-empty list")
   (assert (and (integerp n-samples) (plusp n-samples)) nil
@@ -159,15 +160,33 @@ and accept-rate is the fraction of accepted proposals after warmup."
          (da-state (when (and adapt-step-size (plusp n-warmup))
                      (make-dual-avg-state step-size
                                           :target-accept 0.65d0)))
-         ;; Cache current log-pdf to avoid redundant gradient evaluations
-         (current-log-pdf (multiple-value-bind (val grad)
-                              (safe-gradient log-pdf-fn current-q)
-                            (declare (ignore grad))
-                            (assert val nil
-                                    "hmc: LOG-PDF-FN returned non-finite value at ~
-                                     INITIAL-PARAMS. Ensure initial parameters are ~
-                                     in the support of the distribution.")
-                            val)))
+         ;; Timing for diagnostics
+         (start-time (get-internal-real-time))
+         ;; current-log-pdf is set after restart-case validation below
+         (current-log-pdf nil))
+    ;; Validate initial params; offer restarts on failure
+    (block validate
+      (loop
+        (multiple-value-bind (val grad)
+            (safe-gradient log-pdf-fn current-q)
+          (declare (ignore grad))
+          (when val
+            (setf current-log-pdf val)
+            (return-from validate))
+          (restart-case
+            (error 'invalid-initial-params-error
+                   :params (copy-list current-q)
+                   :message "LOG-PDF-FN returned non-finite value at INITIAL-PARAMS")
+            (use-fallback-params (new-params)
+              :report "Supply new initial params and retry"
+              (setf current-q
+                    (mapcar (lambda (x) (coerce x 'double-float)) new-params)))
+            (return-empty-samples ()
+              :report "Return empty sample list"
+              (return-from hmc
+                (values '() 0.0d0
+                        (make-inference-diagnostics
+                         :n-samples 0 :n-warmup n-warmup))))))))
     (with-float-traps-masked
      (dotimes (iter total-iterations)
       (let* ((current-p (loop repeat n-dim collect (dist:normal-sample)))
@@ -211,6 +230,16 @@ and accept-rate is the fraction of accepted proposals after warmup."
       ;; Collect sample after warmup
       (when (>= iter n-warmup)
         (push (copy-list current-q) samples))))
-    (values (nreverse samples)
-            (/ (coerce n-accepted 'double-float)
-               (coerce n-samples 'double-float)))))
+    (let ((accept-rate (/ (coerce n-accepted 'double-float)
+                          (coerce n-samples 'double-float))))
+      (values (nreverse samples)
+              accept-rate
+              (make-inference-diagnostics
+               :accept-rate accept-rate
+               :n-divergences 0
+               :final-step-size step-size
+               :n-samples n-samples
+               :n-warmup n-warmup
+               :elapsed-seconds (/ (float (- (get-internal-real-time) start-time)
+                                          0.0d0)
+                                   internal-time-units-per-second))))))

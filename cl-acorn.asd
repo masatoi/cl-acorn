@@ -84,4 +84,5 @@
                  (:file "bench-ad")
                  (:file "bench-distributions")
                  (:file "bench-inference")
-                 (:file "run-all")))))
+                 (:file "run-all"))))
+  :description "Benchmark suite for cl-acorn")

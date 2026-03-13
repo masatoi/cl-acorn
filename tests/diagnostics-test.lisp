@@ -21,4 +21,7 @@
       (ok (= (diag:chain-result-n-samples cr) 1))
       (ok (= (diag:chain-result-n-warmup cr) 0))
       (ok (= (diag:chain-result-n-divergences cr) 0))
-      (ok (approx= (diag:chain-result-elapsed-seconds cr) 0.01d0)))))
+      (ok (approx= (diag:chain-result-elapsed-seconds cr) 0.01d0))
+      (ok (equal (diag:chain-result-samples cr) '(((1.0d0 2.0d0)) ((1.1d0 2.1d0)))))
+      (ok (equal (diag:chain-result-r-hat cr) '(1.0d0 1.0d0)))
+      (ok (equal (diag:chain-result-accept-rates cr) '(0.9d0 0.8d0))))))

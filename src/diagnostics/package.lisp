@@ -10,7 +10,7 @@
    #:chain-result-r-hat #:chain-result-bulk-ess #:chain-result-tail-ess
    #:chain-result-accept-rates #:chain-result-n-divergences
    #:chain-result-elapsed-seconds
-   #:make-chain-result
+   #:make-chain-result #:copy-chain-result
    ;; convergence.lisp
    #:r-hat #:bulk-ess #:tail-ess
    #:print-convergence-summary

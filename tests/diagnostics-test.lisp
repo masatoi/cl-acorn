@@ -83,3 +83,17 @@
       (ok (search "1.001" output))
       (ok (search "923" output))
       (ok (search "Total divergences" output)))))
+
+(deftest test-print-convergence-summary-warns
+  (testing "print-convergence-summary shows warn when R-hat > 1.1"
+    (let* ((cr (diag:make-chain-result
+                :n-chains 4 :n-samples 100 :n-warmup 50
+                :r-hat '(1.15d0)
+                :bulk-ess '(80.0d0)
+                :tail-ess '(70.0d0)
+                :n-divergences 2))
+           (output (with-output-to-string (*standard-output*)
+                     (diag:print-convergence-summary cr))))
+      (ok (search "warn" output))
+      (ok (search "1.150" output))
+      (ok (search "Total divergences: 2" output)))))

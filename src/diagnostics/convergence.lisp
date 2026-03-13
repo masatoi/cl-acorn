@@ -68,11 +68,10 @@ Returns a list of double-float R-hat values, one per parameter."
 (defun bulk-ess-1 (param-chains)
   "Compute bulk ESS for a single parameter.
 PARAM-CHAINS: list of chains, each a list of double-float."
-  (let* ((n-chains (length param-chains))
-         (n        (length (first param-chains)))
-         (mn       (float (* n-chains n) 0.0d0))
-         (all-samples (apply #'append param-chains))
-         (rho-sum 0.0d0))
+  (let ((mn          (float (* (length param-chains)
+                               (length (first param-chains))) 0.0d0))
+        (all-samples (apply #'append param-chains))
+        (rho-sum     0.0d0))
     ;; Sum autocorrelations until they go negative (Geyer's initial monotone rule)
     (loop for lag from 1 to (min 100 (1- (length all-samples)))
           for rho = (autocorrelation all-samples lag)
@@ -146,9 +145,10 @@ Status is 'ok' when R-hat < 1.1 and Bulk-ESS > 100, else 'warn'."
          (bess      (chain-result-bulk-ess chain-result))
          (tess      (chain-result-tail-ess chain-result))
          (ndiv      (chain-result-n-divergences chain-result))
-         (total     (* n-chains n-samples)))
+         (n-warmup  (chain-result-n-warmup chain-result))
+         (total     (* n-chains (+ n-samples n-warmup))))
     (format t "~%Convergence diagnostics  (~D chains x ~D samples)~%" n-chains n-samples)
-    (format t "====================================================~%")
+    (format t "==============================================~%")
     (format t "~6A | ~6A | ~8A | ~8A | ~6A~%"
             "Param" "R-hat" "Bulk-ESS" "Tail-ESS" "Status")
     (format t "~6A-+-~6A-+-~8A-+-~8A-+-~6A~%"
@@ -160,5 +160,5 @@ Status is 'ok' when R-hat < 1.1 and Bulk-ESS > 100, else 'warn'."
           do (let ((status (if (and (< rhat 1.1d0) (> be 100.0d0)) "ok" "warn")))
                (format t "~6A | ~6,3F | ~8,1F | ~8,1F | ~6A~%"
                        (format nil "[~D]" i) rhat be te status)))
-    (format t "----------------------------------------------------~%")
+    (format t "----------------------------------------------~%")
     (format t "Total divergences: ~D / ~D~%" ndiv total)))

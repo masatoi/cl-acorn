@@ -67,3 +67,19 @@
       (ok (listp tess))
       (ok (= (length tess) 1))
       (ok (> (first tess) 40.0d0)))))  ; tail ESS can be lower
+
+(deftest test-print-convergence-summary-output
+  (testing "print-convergence-summary produces expected output"
+    (let* ((cr (diag:make-chain-result
+                :n-chains 4 :n-samples 100 :n-warmup 50
+                :r-hat '(1.001d0 0.999d0)
+                :bulk-ess '(923.4d0 887.2d0)
+                :tail-ess '(880.0d0 799.6d0)
+                :n-divergences 0))
+           (output (with-output-to-string (*standard-output*)
+                     (diag:print-convergence-summary cr))))
+      (ok (search "R-hat" output))
+      (ok (search "Bulk-ESS" output))
+      (ok (search "1.001" output))
+      (ok (search "923" output))
+      (ok (search "Total divergences" output)))))

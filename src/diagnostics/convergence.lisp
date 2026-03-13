@@ -124,3 +124,41 @@ Returns a list of double-float tail-ESS values."
   (let ((n-params (length (first (first chains)))))
     (loop for i from 0 below n-params
           collect (tail-ess-1 (chain-param chains i)))))
+
+;;; ---- Convergence summary table --------------------------------------
+
+(defun print-convergence-summary (chain-result)
+  "Print convergence diagnostics table to *STANDARD-OUTPUT*.
+
+Output format:
+  Convergence diagnostics  (4 chains x 1000 samples)
+  ====================================================
+  Param | R-hat  | Bulk-ESS | Tail-ESS | Status
+  ------|--------|----------|----------|--------
+    [0] | 1.001  |    923.4 |    887.2 | ok
+  ----
+  Total divergences: 0 / 4000
+
+Status is 'ok' when R-hat < 1.1 and Bulk-ESS > 100, else 'warn'."
+  (let* ((n-chains  (chain-result-n-chains chain-result))
+         (n-samples (chain-result-n-samples chain-result))
+         (rhats     (chain-result-r-hat chain-result))
+         (bess      (chain-result-bulk-ess chain-result))
+         (tess      (chain-result-tail-ess chain-result))
+         (ndiv      (chain-result-n-divergences chain-result))
+         (total     (* n-chains n-samples)))
+    (format t "~%Convergence diagnostics  (~D chains x ~D samples)~%" n-chains n-samples)
+    (format t "====================================================~%")
+    (format t "~6A | ~6A | ~8A | ~8A | ~6A~%"
+            "Param" "R-hat" "Bulk-ESS" "Tail-ESS" "Status")
+    (format t "~6A-+-~6A-+-~8A-+-~8A-+-~6A~%"
+            "------" "------" "--------" "--------" "------")
+    (loop for i from 0
+          for rhat in rhats
+          for be   in bess
+          for te   in tess
+          do (let ((status (if (and (< rhat 1.1d0) (> be 100.0d0)) "ok" "warn")))
+               (format t "~6A | ~6,3F | ~8,1F | ~8,1F | ~6A~%"
+                       (format nil "[~D]" i) rhat be te status)))
+    (format t "----------------------------------------------------~%")
+    (format t "Total divergences: ~D / ~D~%" ndiv total)))

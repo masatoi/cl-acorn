@@ -1,5 +1,11 @@
 (in-package #:cl-acorn.inference)
 
+(defvar +log-epsilon-max+ 20.0d0
+  "Maximum log step-size to prevent exp overflow (exp(20) ~ 4.8e8).")
+
+(defvar +log-epsilon-min+ -20.0d0
+  "Minimum log step-size to prevent underflow (exp(-20) ~ 2e-9).")
+
 (defstruct (dual-avg-state (:constructor %make-dual-avg-state))
   "State for Nesterov dual averaging step-size adaptation.
 Implements Algorithm 5 from Hoffman & Gelman (2014, 'The No-U-Turn Sampler')."
@@ -31,6 +37,7 @@ TARGET-ACCEPT is the desired average acceptance probability (default 0.65)."
 
 (defun dual-avg-update (state accept-prob)
   "Update the dual averaging state with a new acceptance probability.
+ACCEPT-PROB is clamped to [0, 1] and NaN is treated as 0.
 Returns the new step-size to use for the next iteration."
   (let* ((m (1+ (dual-avg-state-step-count state)))
          (target (dual-avg-state-target-accept state))
@@ -38,22 +45,28 @@ Returns the new step-size to use for the next iteration."
          (t0 (dual-avg-state-t0 state))
          (kappa (dual-avg-state-kappa state))
          (mu (dual-avg-state-mu state))
-         (accept-prob (max 0.0d0 (min 1.0d0
-                                      (coerce accept-prob 'double-float))))
+         ;; Clamp and sanitize accept-prob: NaN/Inf -> 0
+         (accept-prob-d (coerce accept-prob 'double-float))
+         (accept-prob (if (and (not (sb-ext:float-nan-p accept-prob-d))
+                               (not (sb-ext:float-infinity-p accept-prob-d)))
+                          (max 0.0d0 (min 1.0d0 accept-prob-d))
+                          0.0d0))
          ;; Update H-bar: running mean of (target - accept-prob)
-         (new-h-bar (+ (* (/ (- 1.0d0 (/ 1.0d0 (+ m t0)))
-                             1.0d0)
+         (new-h-bar (+ (* (- 1.0d0 (/ 1.0d0 (+ m t0)))
                            (dual-avg-state-h-bar state))
                         (* (/ 1.0d0 (+ m t0))
                            (- target accept-prob))))
-         ;; Update log-epsilon
+         ;; Update log-epsilon with clamping
          (new-log-eps (- mu (* (/ (sqrt (coerce m 'double-float)) gamma)
                                new-h-bar)))
-         ;; Update log-epsilon-bar (smoothed)
+         (new-log-eps (max +log-epsilon-min+ (min +log-epsilon-max+ new-log-eps)))
+         ;; Update log-epsilon-bar (smoothed) with clamping
          (eta (expt (coerce m 'double-float) (- kappa)))
          (new-log-eps-bar (+ (* eta new-log-eps)
                              (* (- 1.0d0 eta)
-                                (dual-avg-state-log-epsilon-bar state)))))
+                                (dual-avg-state-log-epsilon-bar state))))
+         (new-log-eps-bar (max +log-epsilon-min+
+                               (min +log-epsilon-max+ new-log-eps-bar))))
     (setf (dual-avg-state-step-count state) m
           (dual-avg-state-h-bar state) new-h-bar
           (dual-avg-state-log-epsilon state) new-log-eps

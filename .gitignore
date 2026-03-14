@@ -8,3 +8,6 @@
 .#*
 
 .serena/
+
+# Downloaded datasets (not for repository inclusion)
+examples/data/

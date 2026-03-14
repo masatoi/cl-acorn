@@ -225,3 +225,98 @@ For use with diag:waic and diag:loo."
            (rate-a   (exp (+ att-j (- def-i)))))
       (+ (dist:poisson-log-pdf hg :rate rate-h)
          (dist:poisson-log-pdf ag :rate rate-a)))))
+
+;;; -------------------------------------------------------------------------
+;;; Posterior summary helpers
+;;; -------------------------------------------------------------------------
+
+(defun posterior-mean-vec (samples idx)
+  "Compute the posterior mean of the IDX-th parameter across all SAMPLES.
+SAMPLES is a flat list of parameter vectors (one per post-warmup draw)."
+  (/ (reduce #'+ samples :key (lambda (s) (float (nth idx s) 0.0d0)))
+     (float (length samples) 0.0d0)))
+
+(defun posterior-sd-vec (samples idx)
+  "Compute the posterior standard deviation of the IDX-th parameter across SAMPLES."
+  (let* ((n    (length samples))
+         (mean (posterior-mean-vec samples idx))
+         (ssq  (reduce #'+ samples
+                       :key (lambda (s)
+                              (let ((d (- (float (nth idx s) 0.0d0) mean)))
+                                (* d d))))))
+    (sqrt (/ ssq (float (max 1 (1- n)) 0.0d0)))))
+
+(defun print-team-rankings (samples teams n-teams)
+  "Print a ranked table of attack and defense posterior means +/- 1 SD.
+SAMPLES: flat list of all post-warmup parameter vectors.
+TEAMS:   list of team name strings (alphabetically sorted, matching parameter layout).
+N-TEAMS: number of teams."
+  ;; Compute attack_i = mu_att + sigma_att * z_att_i from raw samples
+  ;; then derive per-team posterior mean and SD
+  (let* ((attack-means
+          (loop for i from 0 below n-teams
+                collect (let ((att-i-samples
+                               (mapcar (lambda (s)
+                                         (let ((mu    (float (nth 1 s) 0.0d0))
+                                               (sigma (exp (float (nth 2 s) 0.0d0)))
+                                               (z     (float (nth (+ 5 i) s) 0.0d0)))
+                                           (+ mu (* sigma z))))
+                                       samples)))
+                           (/ (reduce #'+ att-i-samples)
+                              (float (length att-i-samples) 0.0d0)))))
+         (attack-sds
+          (loop for i from 0 below n-teams
+                collect (let* ((att-i-samples
+                                (mapcar (lambda (s)
+                                          (let ((mu    (float (nth 1 s) 0.0d0))
+                                                (sigma (exp (float (nth 2 s) 0.0d0)))
+                                                (z     (float (nth (+ 5 i) s) 0.0d0)))
+                                            (+ mu (* sigma z))))
+                                        samples))
+                               (n    (length att-i-samples))
+                               (mean (/ (reduce #'+ att-i-samples) (float n 0.0d0)))
+                               (ssq  (reduce #'+ att-i-samples
+                                             :key (lambda (x) (let ((d (- x mean))) (* d d))))))
+                           (sqrt (/ ssq (float (max 1 (1- n)) 0.0d0))))))
+         (defense-means
+          (loop for i from 0 below n-teams
+                collect (let ((def-i-samples
+                               (mapcar (lambda (s)
+                                         (let ((mu    (float (nth 3 s) 0.0d0))
+                                               (sigma (exp (float (nth 4 s) 0.0d0)))
+                                               (z     (float (nth (+ 5 n-teams i) s) 0.0d0)))
+                                           (+ mu (* sigma z))))
+                                       samples)))
+                           (/ (reduce #'+ def-i-samples)
+                              (float (length def-i-samples) 0.0d0)))))
+         (defense-sds
+          (loop for i from 0 below n-teams
+                collect (let* ((def-i-samples
+                                (mapcar (lambda (s)
+                                          (let ((mu    (float (nth 3 s) 0.0d0))
+                                                (sigma (exp (float (nth 4 s) 0.0d0)))
+                                                (z     (float (nth (+ 5 n-teams i) s) 0.0d0)))
+                                            (+ mu (* sigma z))))
+                                        samples))
+                               (n    (length def-i-samples))
+                               (mean (/ (reduce #'+ def-i-samples) (float n 0.0d0)))
+                               (ssq  (reduce #'+ def-i-samples
+                                             :key (lambda (x) (let ((d (- x mean))) (* d d))))))
+                           (sqrt (/ ssq (float (max 1 (1- n)) 0.0d0))))))
+         ;; Sort by attack mean descending
+         (ranking (sort (loop for i from 0 below n-teams
+                              collect (list i
+                                            (nth i attack-means)
+                                            (nth i attack-sds)
+                                            (nth i defense-means)
+                                            (nth i defense-sds)))
+                        #'> :key #'second)))
+    (format t "~%  ~4A  ~-14A  ~7A  ~5A  ~8A  ~5A~%"
+            "Rank" "Team" "Attack" "+-SD" "Defense" "+-SD")
+    (format t "  ~56A~%" (make-string 56 :initial-element #\=))
+    (loop for (i att att-sd def def-sd) in ranking
+          for rank from 1
+          do (format t "  ~4D  ~-14A  ~+7,3F  ~5,3F  ~+8,3F  ~5,3F~%"
+                     rank (nth i teams) att att-sd def def-sd))
+    (format t "  ~56A~%" (make-string 56 :initial-element #\=))
+    (format t "  (attack > 0: scores more than avg; defense < 0: concedes less)~%")))

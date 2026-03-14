@@ -348,6 +348,8 @@ The `examples/` directory contains complete, runnable demonstrations:
 | [09-hmc-bayes-regression](examples/09-hmc-bayes-regression/) | Bayesian linear regression with Hamiltonian Monte Carlo |
 | [10-nuts-bayes-regression](examples/10-nuts-bayes-regression/) | Bayesian linear regression with the No-U-Turn Sampler |
 | [11-vi-bayes-regression](examples/11-vi-bayes-regression/) | Bayesian linear regression with mean-field variational inference |
+| [12-football-goals](examples/12-football-goals/) | Baseline Poisson model for international football goal counts with multi-chain NUTS and convergence diagnostics |
+| [13-football-hierarchy](examples/13-football-hierarchy/) | Hierarchical Poisson model for national team strengths with non-centered parameterization, partial pooling, and flat vs hierarchical WAIC comparison |
 
 Run any example:
 

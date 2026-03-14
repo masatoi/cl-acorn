@@ -122,3 +122,33 @@ For use with diag:waic and diag:loo."
           (la (exp (float (second params) 0.0d0))))
       (+ (dist:poisson-log-pdf (third  row) :rate lh)
          (dist:poisson-log-pdf (fourth row) :rate la)))))
+
+;;; -------------------------------------------------------------------------
+;;; H-hier — Hierarchical: non-centered parameterization
+;;; -------------------------------------------------------------------------
+
+(defun decode-params (params n-teams)
+  "Destructure flat parameter vector PARAMS into named hierarchical components.
+Returns (values home-adv mu-att sigma-att mu-def sigma-def attacks defenses).
+ATTACKS and DEFENSES are lists of N-TEAMS AD values:
+  attack_i  = mu-att + sigma-att * z_att_i
+  defense_i = mu-def + sigma-def * z_def_i
+
+Parameter layout (length = 5 + 2*N-TEAMS):
+  index 0         : home-adv
+  index 1         : mu-att
+  index 2         : log-sigma-att   (sigma-att = exp of this)
+  index 3         : mu-def
+  index 4         : log-sigma-def
+  indices 5..N+4  : z-att-0 .. z-att-(N-1)
+  indices N+5..end: z-def-0 .. z-def-(N-1)"
+  (let* ((home-adv   (nth 0 params))
+         (mu-att     (nth 1 params))
+         (sigma-att  (ad:exp (nth 2 params)))
+         (mu-def     (nth 3 params))
+         (sigma-def  (ad:exp (nth 4 params)))
+         (z-att      (subseq params 5 (+ 5 n-teams)))
+         (z-def      (subseq params (+ 5 n-teams) (+ 5 (* 2 n-teams))))
+         (attacks    (mapcar (lambda (z) (ad:+ mu-att (ad:* sigma-att z))) z-att))
+         (defenses   (mapcar (lambda (z) (ad:+ mu-def (ad:* sigma-def z))) z-def)))
+    (values home-adv mu-att sigma-att mu-def sigma-def attacks defenses)))

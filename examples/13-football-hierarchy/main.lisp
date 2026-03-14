@@ -311,12 +311,158 @@ N-TEAMS: number of teams."
                                             (nth i defense-means)
                                             (nth i defense-sds)))
                         #'> :key #'second)))
-    (format t "~%  ~4A  ~-14A  ~7A  ~5A  ~8A  ~5A~%"
+    (format t "~%  ~4A  ~14A  ~7A  ~5A  ~8A  ~5A~%"
             "Rank" "Team" "Attack" "+-SD" "Defense" "+-SD")
     (format t "  ~56A~%" (make-string 56 :initial-element #\=))
     (loop for (i att att-sd def def-sd) in ranking
           for rank from 1
-          do (format t "  ~4D  ~-14A  ~+7,3F  ~5,3F  ~+8,3F  ~5,3F~%"
+          do (format t "  ~4D  ~14A  ~+7,3F  ~5,3F  ~+8,3F  ~5,3F~%"
                      rank (nth i teams) att att-sd def def-sd))
     (format t "  ~56A~%" (make-string 56 :initial-element #\=))
     (format t "  (attack > 0: scores more than avg; defense < 0: concedes less)~%")))
+
+;;; -------------------------------------------------------------------------
+;;; Fit helper
+;;; -------------------------------------------------------------------------
+
+(defun fit-model (name log-posterior-fn initial-params
+                  &key (n-chains 2) (n-samples 500) (n-warmup 300))
+  "Fit a model with NUTS, print convergence summary, and return the chain-result."
+  (format t "  Fitting ~A...~%" name)
+  (finish-output)
+  (let ((result (diag:run-chains log-posterior-fn initial-params
+                                 :n-chains  n-chains
+                                 :n-samples n-samples
+                                 :n-warmup  n-warmup)))
+    (diag:print-convergence-summary result)
+    result))
+
+;;; -------------------------------------------------------------------------
+;;; Step 4 helper: interpret WAIC comparison and print team rankings
+;;; -------------------------------------------------------------------------
+
+(defun print-hier-interpretation (waic-flat waic-hier result-hier n-teams)
+  "Print ΔWAIC interpretation, hyperparameter estimates, and team ranking table."
+  (let* ((all-samples (apply #'append (diag:chain-result-samples result-hier)))
+         (delta-waic  (- waic-flat waic-hier))
+         (eta-mean    (posterior-mean-vec all-samples 0))
+         (eta-sd      (posterior-sd-vec   all-samples 0))
+         (s-att-mean  (exp (posterior-mean-vec all-samples 2)))
+         (s-def-mean  (exp (posterior-mean-vec all-samples 4))))
+    (format t "[Step 4] Interpretation~%~%")
+    (format t "  ΔWAIC (flat -> hier) = ~+,1F~%" delta-waic)
+    (if (> delta-waic 10.0d0)
+        (format t "  -> Hierarchical model improves predictive accuracy.~%~%")
+        (format t "  -> Models are comparable (ΔWAIC < 10).~%~%"))
+    (format t "  Hyperparameter estimates:~%")
+    (format t "    Home advantage  eta    = ~+,3F  +/- ~,3F~%" eta-mean eta-sd)
+    (format t "    Attack spread   sigma  = ~,3F  (heterogeneity across teams)~%" s-att-mean)
+    (format t "    Defense spread  sigma  = ~,3F~%~%" s-def-mean)
+    (format t "  Team strength rankings (posterior mean +/- 1 SD):~%")
+    (print-team-rankings all-samples *focal-teams* n-teams)
+    (format t "~%  Partial pooling:~%")
+    (let* ((match-counts
+            (let ((cnt (make-array n-teams :initial-element 0)))
+              (dolist (row (let ((data-path
+                                  (merge-pathnames "examples/data/results.csv"
+                                                   (asdf:system-source-directory :cl-acorn))))
+                             (load-matches data-path)))
+                (incf (aref cnt (first  row)))
+                (incf (aref cnt (second row))))
+              cnt))
+           (sorted-teams (sort (loop for i from 0 below n-teams
+                                     collect (cons (aref match-counts i) (nth i *focal-teams*)))
+                               #'>  :key #'car))
+           (most-team  (cdr (first  sorted-teams)))
+           (least-team (cdr (car (last sorted-teams))))
+           (most-idx   (position most-team  *focal-teams* :test #'string=))
+           (least-idx  (position least-team *focal-teams* :test #'string=))
+           (most-att-sd  (let* ((samps (mapcar (lambda (s)
+                                                 (let ((mu (float (nth 1 s) 0.0d0))
+                                                       (sg (exp (float (nth 2 s) 0.0d0)))
+                                                       (z  (float (nth (+ 5 most-idx) s) 0.0d0)))
+                                                   (+ mu (* sg z))))
+                                               all-samples))
+                                (n (length samps))
+                                (m (/ (reduce #'+ samps) (float n 0.0d0)))
+                                (v (/ (reduce #'+ samps :key (lambda (x) (let ((d (- x m))) (* d d))))
+                                      (float (max 1 (1- n)) 0.0d0))))
+                           (sqrt v)))
+           (least-att-sd (let* ((samps (mapcar (lambda (s)
+                                                 (let ((mu (float (nth 1 s) 0.0d0))
+                                                       (sg (exp (float (nth 2 s) 0.0d0)))
+                                                       (z  (float (nth (+ 5 least-idx) s) 0.0d0)))
+                                                   (+ mu (* sg z))))
+                                               all-samples))
+                                (n (length samps))
+                                (m (/ (reduce #'+ samps) (float n 0.0d0)))
+                                (v (/ (reduce #'+ samps :key (lambda (x) (let ((d (- x m))) (* d d))))
+                                      (float (max 1 (1- n)) 0.0d0))))
+                           (sqrt v))))
+      (format t "    ~A  (~D matches): attack SD = ~,3F~%"
+              most-team (aref match-counts most-idx) most-att-sd)
+      (format t "    ~A (~D matches): attack SD = ~,3F~%"
+              least-team (aref match-counts least-idx) least-att-sd)
+      (format t "    Fewer matches -> wider credible intervals (partial pooling in action).~%"))))
+
+;;; -------------------------------------------------------------------------
+;;; Main workflow
+;;; -------------------------------------------------------------------------
+
+(defun main ()
+  (let* ((data-path (merge-pathnames "examples/data/results.csv"
+                                     (asdf:system-source-directory :cl-acorn)))
+         (data      (load-matches data-path))
+         (n-teams   (length *focal-teams*))
+         (n-matches (length data)))
+
+    ;; ----------------------------------------------------------------
+    ;; Step 1: Propose models
+    ;; ----------------------------------------------------------------
+    (format t "~%=== AI-guided model selection: team strengths in international football ===~%")
+    (format t "Dataset: ~D matches  (~D teams, 2019-2024, home/away only)~%~%"
+            n-matches n-teams)
+
+    (format t "[Step 1] Proposing models~%~%")
+    (format t "  H1-flat (baseline, 2 params):~%")
+    (format t "    home_goals ~~ Pois(exp(log_lh)),  away_goals ~~ Pois(exp(log_la))~%")
+    (format t "    Question: can a single home/away rate explain all matches?~%~%")
+    (format t "  H-hier  (hierarchical, ~D params):~%" (+ 5 (* 2 n-teams)))
+    (format t "    home_goals ~~ Pois(exp(eta + att_i - def_j))~%")
+    (format t "    away_goals ~~ Pois(exp(att_j - def_i))~%")
+    (format t "    att_i = mu_att + sigma_att * z_att_i  (non-centered)~%")
+    (format t "    Question: does team identity improve predictive accuracy?~%~%")
+
+    ;; ----------------------------------------------------------------
+    ;; Step 2: Fit both models
+    ;; ----------------------------------------------------------------
+    (format t "[Step 2] Fitting models via NUTS (2 chains x 500 samples each)~%~%")
+
+    (let* ((initial-flat  '(0.4d0 0.18d0))
+           (initial-hier  (make-list (+ 5 (* 2 n-teams)) :initial-element 0.0d0))
+           (result-flat  (fit-model "H1-flat"
+                                    (make-log-posterior-flat data)
+                                    initial-flat))
+           (result-hier  (fit-model "H-hier"
+                                    (make-log-posterior-hier data n-teams)
+                                    initial-hier))
+           (log-lik-flat-fn (make-log-lik-flat))
+           (log-lik-hier-fn (make-log-lik-hier n-teams)))
+
+      ;; ----------------------------------------------------------------
+      ;; Step 3: Compare models
+      ;; ----------------------------------------------------------------
+      (format t "[Step 3] Model comparison (lower WAIC / LOO = better fit)~%~%")
+      (diag:print-model-comparison
+       "H1-flat"  result-flat  log-lik-flat-fn data
+       "H-hier"   result-hier  log-lik-hier-fn data)
+      (format t "~%")
+
+      ;; ----------------------------------------------------------------
+      ;; Step 4: Interpret
+      ;; ----------------------------------------------------------------
+      (let ((waic-flat (nth-value 0 (diag:waic result-flat  log-lik-flat-fn data)))
+            (waic-hier (nth-value 0 (diag:waic result-hier  log-lik-hier-fn data))))
+        (print-hier-interpretation waic-flat waic-hier result-hier n-teams)))))
+
+(main)

@@ -152,3 +152,76 @@ Parameter layout (length = 5 + 2*N-TEAMS):
          (attacks    (mapcar (lambda (z) (ad:+ mu-att (ad:* sigma-att z))) z-att))
          (defenses   (mapcar (lambda (z) (ad:+ mu-def (ad:* sigma-def z))) z-def)))
     (values home-adv mu-att sigma-att mu-def sigma-def attacks defenses)))
+
+(defun make-log-posterior-hier (data n-teams)
+  "Log-posterior for H-hier.
+Parameter vector layout: see decode-params.
+Total parameters: 5 + 2*N-TEAMS = 35 for N-TEAMS=15."
+  (let ((n (float n-teams 0.0d0)))
+    (lambda (params)
+      (multiple-value-bind (home-adv mu-att sigma-att mu-def sigma-def attacks defenses)
+          (decode-params params n-teams)
+        (declare (ignore mu-att sigma-att mu-def sigma-def))
+        (let* (;; --- Likelihood ---
+               (ll (reduce
+                    (lambda (acc row)
+                      (let* ((hi     (first  row))
+                             (ai     (second row))
+                             (hg     (third  row))
+                             (ag     (fourth row))
+                             (lrate-h (ad:+ home-adv
+                                           (nth hi attacks)
+                                           (ad:- (nth ai defenses))))
+                             (lrate-a (ad:- (nth ai attacks)
+                                           (nth hi defenses))))
+                        (ad:+ acc
+                              (dist:poisson-log-pdf hg :rate (ad:exp lrate-h))
+                              (dist:poisson-log-pdf ag :rate (ad:exp lrate-a)))))
+                    data :initial-value 0.0d0))
+               ;; --- Priors on hyperparameters ---
+               (lp (ad:+ (dist:normal-log-pdf (nth 0 params) :mu 0.0d0 :sigma 1.0d0)
+                         (dist:normal-log-pdf (nth 1 params) :mu 0.0d0 :sigma 1.0d0)
+                         (dist:normal-log-pdf (nth 2 params) :mu 0.0d0 :sigma 1.0d0)
+                         (dist:normal-log-pdf (nth 3 params) :mu 0.0d0 :sigma 1.0d0)
+                         (dist:normal-log-pdf (nth 4 params) :mu 0.0d0 :sigma 1.0d0)))
+               ;; --- Priors on z offsets: z_i ~ Normal(0,1) ---
+               (lz-att (reduce (lambda (acc z)
+                                 (ad:+ acc (dist:normal-log-pdf z :mu 0.0d0 :sigma 1.0d0)))
+                               (subseq params 5 (+ 5 n-teams))
+                               :initial-value 0.0d0))
+               (lz-def (reduce (lambda (acc z)
+                                 (ad:+ acc (dist:normal-log-pdf z :mu 0.0d0 :sigma 1.0d0)))
+                               (subseq params (+ 5 n-teams) (+ 5 (* 2 n-teams)))
+                               :initial-value 0.0d0))
+               ;; --- Soft sum-to-zero constraint: mean(z) ~ Normal(0, 0.01) ---
+               (mean-z-att (ad:/ (reduce #'ad:+ (subseq params 5 (+ 5 n-teams))
+                                         :initial-value 0.0d0)
+                                 n))
+               (mean-z-def (ad:/ (reduce #'ad:+ (subseq params (+ 5 n-teams)
+                                                         (+ 5 (* 2 n-teams)))
+                                         :initial-value 0.0d0)
+                                 n))
+               (lsz (ad:+ (dist:normal-log-pdf mean-z-att :mu 0.0d0 :sigma 0.01d0)
+                          (dist:normal-log-pdf mean-z-def :mu 0.0d0 :sigma 0.01d0))))
+          (ad:+ ll lp lz-att lz-def lsz))))))
+
+(defun make-log-lik-hier (n-teams)
+  "Return a point log-likelihood function for H-hier (plain arithmetic, no AD).
+For use with diag:waic and diag:loo."
+  (lambda (params row)
+    (let* ((hi       (first  row))
+           (ai       (second row))
+           (hg       (third  row))
+           (ag       (fourth row))
+           (mu-att   (float (nth 1 params) 0.0d0))
+           (s-att    (exp   (float (nth 2 params) 0.0d0)))
+           (mu-def   (float (nth 3 params) 0.0d0))
+           (s-def    (exp   (float (nth 4 params) 0.0d0)))
+           (att-i    (+ mu-att (* s-att (float (nth (+ 5 hi) params) 0.0d0))))
+           (def-i    (+ mu-def (* s-def (float (nth (+ 5 n-teams hi) params) 0.0d0))))
+           (att-j    (+ mu-att (* s-att (float (nth (+ 5 ai) params) 0.0d0))))
+           (def-j    (+ mu-def (* s-def (float (nth (+ 5 n-teams ai) params) 0.0d0))))
+           (rate-h   (exp (+ (float (nth 0 params) 0.0d0) att-i (- def-j))))
+           (rate-a   (exp (+ att-j (- def-i)))))
+      (+ (dist:poisson-log-pdf hg :rate rate-h)
+         (dist:poisson-log-pdf ag :rate rate-a)))))

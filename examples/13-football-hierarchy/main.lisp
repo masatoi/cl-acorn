@@ -93,3 +93,32 @@ PATH points to results.csv with columns:
                           (gethash away team-index)
                           (parse-integer (fourth fields))
                           (parse-integer (fifth  fields)))))))
+
+;;; -------------------------------------------------------------------------
+;;; H1-flat — Baseline: global home/away rates (no team identity)
+;;; -------------------------------------------------------------------------
+
+(defun make-log-posterior-flat (data)
+  "Log-posterior for H1-flat.  Parameters: (log-lambda-h  log-lambda-a)"
+  (lambda (params)
+    (let* ((log-lh   (first  params))
+           (log-la   (second params))
+           (lambda-h (ad:exp log-lh))
+           (lambda-a (ad:exp log-la))
+           (ll (reduce (lambda (acc row)
+                         (ad:+ acc
+                               (dist:poisson-log-pdf (third  row) :rate lambda-h)
+                               (dist:poisson-log-pdf (fourth row) :rate lambda-a)))
+                       data :initial-value 0.0d0)))
+      (ad:+ ll
+            (dist:normal-log-pdf log-lh :mu 0.0d0 :sigma 2.0d0)
+            (dist:normal-log-pdf log-la :mu 0.0d0 :sigma 2.0d0)))))
+
+(defun make-log-lik-flat ()
+  "Return a point log-likelihood function for H1-flat (plain arithmetic, no AD).
+For use with diag:waic and diag:loo."
+  (lambda (params row)
+    (let ((lh (exp (float (first  params) 0.0d0)))
+          (la (exp (float (second params) 0.0d0))))
+      (+ (dist:poisson-log-pdf (third  row) :rate lh)
+         (dist:poisson-log-pdf (fourth row) :rate la)))))

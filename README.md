@@ -40,7 +40,7 @@ git clone https://github.com/masatoi/cl-acorn.git
 (ql:quickload :cl-acorn)
 ```
 
-The current inference implementation uses SBCL floating-point utilities internally, so SBCL is the primary tested runtime.
+The inference implementation uses SBCL floating-point utilities (`sb-ext:float-nan-p`, `sb-ext:float-infinity-p`, `sb-int:with-float-traps-masked`) and **requires SBCL**.
 
 ## API Reference
 
@@ -105,7 +105,7 @@ Computes `H*v` where `H` is the Hessian of scalar `fn` at `params`. Uses forward
 
 ### Probability Distributions
 
-All symbols are exported from `cl-acorn.distributions` (nickname: `dist`). Log-PDF functions are AD-transparent -- parameters accept dual numbers and tape-nodes for automatic differentiation.
+All symbols are exported from `cl-acorn.distributions` (nickname: `dist`). Most log-PDF parameters are AD-transparent (accept dual numbers and tape-nodes). **Exception**: `gamma-log-pdf :shape` and `beta-log-pdf :alpha`/`:beta` use `log-gammaln` internally, which is not AD-transparent; differentiate through `x` (the observation variable) instead.
 
 | Utility | Description |
 |---------|-------------|
@@ -157,21 +157,27 @@ All symbols are exported from `cl-acorn.inference` (nickname: `infer`).
 ```
 
 ```lisp
-(infer:vi log-pdf-fn n-params
+(infer:vi log-pdf-fn initial-params
   :n-iterations 1000 :n-elbo-samples 10 :lr 0.01d0)
 ;; => (values mu-list sigma-list elbo-history diagnostics)
 ```
 
-`infer:hmc` supports optional `:adapt-step-size`, `infer:nuts` adapts step size by default, and both return an `infer:inference-diagnostics` struct as their third value. `infer:vi` returns posterior means, posterior standard deviations, ELBO history, and diagnostics.
+`infer:hmc` uses a **fixed step size by default** (`:adapt-step-size nil`); pass `:adapt-step-size t` to enable Nesterov dual averaging during warmup. `infer:nuts` adapts step size by default. Both return an `infer:inference-diagnostics` struct as their third value. `infer:vi` takes a list of initial parameter values and returns posterior means, posterior standard deviations, ELBO history, and diagnostics.
 
 Common exported condition and restart APIs include:
 
 | Category | Symbols |
 |----------|---------|
-| Errors | `infer:invalid-parameter-error`, `infer:log-pdf-domain-error`, `infer:invalid-initial-params-error`, `infer:non-finite-gradient-error` |
+| Base conditions | `infer:acorn-error`, `infer:acorn-error-message`, `infer:model-error`, `infer:inference-error` |
+| Errors | `infer:invalid-parameter-error`, `infer:log-pdf-domain-error`, `infer:invalid-initial-params-error` |
+| Informational signals | `infer:non-finite-gradient-error`, `infer:non-finite-gradient-error-params`, `infer:non-finite-gradient-error-message` |
 | Warnings | `infer:high-divergence-warning` |
 | Restarts | `infer:use-fallback-params`, `infer:return-empty-samples`, `infer:continue-with-warnings` |
-| Diagnostics | `infer:inference-diagnostics`, `infer:diagnostics-accept-rate`, `infer:diagnostics-n-divergences`, `infer:diagnostics-final-step-size`, `infer:diagnostics-n-samples`, `infer:diagnostics-n-warmup`, `infer:diagnostics-elapsed-seconds` |
+| Diagnostics | `infer:inference-diagnostics`, `infer:inference-diagnostics-p`, `infer:diagnostics-accept-rate`, `infer:diagnostics-n-divergences`, `infer:diagnostics-final-step-size`, `infer:diagnostics-n-samples`, `infer:diagnostics-n-warmup`, `infer:diagnostics-elapsed-seconds` |
+
+`infer:acorn-error` is the root condition for all library errors. Use `(handler-case ... (infer:acorn-error (c) ...))` to catch any error raised by cl-acorn inference functions. `infer:model-error` and `infer:inference-error` are subclasses for model-definition and sampler failures respectively. `infer:acorn-error-message` retrieves the human-readable message from any `acorn-error` subtype.
+
+`infer:non-finite-gradient-error` is a **plain condition** (not an error subtype) that is `signal`-ed — not `error`-ed — when a gradient computation yields non-finite values. Because it does not inherit from `error`, a `handler-case` `error` clause will never observe it; use `handler-bind` instead. The sampler automatically skips non-finite-gradient steps and continues sampling; user handlers may observe but should not perform non-local exits during `run-chains`.
 
 ### MCMC Diagnostics
 
@@ -359,7 +365,7 @@ Run any example:
 
 ## Running Tests
 
-cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (currently 207 tests).
+cl-acorn uses [Rove](https://github.com/fukamachi/rove) for testing (currently 238 tests).
 
 ```bash
 rove cl-acorn.asd

@@ -105,3 +105,41 @@
                       :n-samples 50 :n-warmup 5
                       :step-size 100.0d0 :adapt-step-size nil)
           t))))
+
+(deftest test-non-finite-gradient-error-catchable
+  (testing "non-finite-gradient-error is catchable by user handler-bind handlers"
+    ;; This test verifies the M1 fix: signal is emitted OUTSIDE the handler-case
+    ;; so user-installed handler-bind handlers can observe it.
+    ;; We use a log-pdf that returns +Inf (triggers the non-finite path in safe-gradient).
+    ;; Without the fix, the (error (c) ...) clause inside handler-case swallows the signal.
+    (let ((caught nil))
+      (handler-bind ((infer:non-finite-gradient-error
+                       (lambda (c)
+                         (declare (ignore c))
+                         (setf caught t))))
+        (handler-bind ((infer:invalid-initial-params-error
+                         (lambda (c)
+                           (declare (ignore c))
+                           (invoke-restart 'infer:return-empty-samples))))
+          (infer:hmc #'always-bad-log-pdf '(0.0d0)
+                     :n-samples 5 :n-warmup 2)))
+      (ok caught "non-finite-gradient-error should be catchable by handler-bind")))
+
+  (testing "non-finite-gradient-error-params slot is accessible"
+    (let ((caught-params nil))
+      (handler-bind ((infer:non-finite-gradient-error
+                       (lambda (c)
+                         (setf caught-params (infer:non-finite-gradient-error-params c)))))
+        (handler-bind ((infer:invalid-initial-params-error
+                         (lambda (c)
+                           (declare (ignore c))
+                           (invoke-restart 'infer:return-empty-samples))))
+          (infer:hmc #'always-bad-log-pdf '(0.0d0)
+                     :n-samples 5 :n-warmup 2)))
+      (ok (not (null caught-params)) "non-finite-gradient-error :params slot should be non-nil")))
+
+  (testing "non-finite-gradient-error is not a subtype of error"
+    ;; non-finite-gradient-error is a plain condition, not an error.
+    ;; This means signal returns nil normally — it never escalates to the debugger.
+    (ok (not (subtypep 'infer:non-finite-gradient-error 'error))
+        "non-finite-gradient-error must not be an error subtype")))

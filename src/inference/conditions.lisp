@@ -48,13 +48,19 @@
   (:documentation
    "Signaled when initial parameters produce a non-finite log-probability."))
 
-(define-condition non-finite-gradient-error (inference-error)
-  ((params :initarg :params :reader non-finite-gradient-error-params))
+(define-condition non-finite-gradient-error (condition)
+  ((params   :initarg :params   :reader non-finite-gradient-error-params)
+   (message  :initarg :message  :reader non-finite-gradient-error-message
+             :initform "non-finite gradient"))
   (:report (lambda (c s)
               (format s "Non-finite gradient at params ~A: ~A"
                       (non-finite-gradient-error-params c)
-                      (acorn-error-message c))))
-  (:documentation "Signaled when the gradient is non-finite at a parameter set."))
+                      (non-finite-gradient-error-message c))))
+  (:documentation
+   "Signaled (not errored) when the gradient is non-finite at a parameter set.
+Inherits from CONDITION, not ERROR, so SIGNAL returns normally if no handler
+takes a non-local exit. This allows user HANDLER-BIND handlers to observe the
+condition while SAFE-GRADIENT continues returning (values nil nil)."))
 
 ;;; ---- Warnings --------------------------------------------------------
 

@@ -7,7 +7,7 @@
   (testing "VI recovers standard normal posterior (mu~0, sigma~1)"
     (let ((log-pdf (lambda (p) (ad:* -0.5d0 (ad:* (first p) (first p))))))
       (multiple-value-bind (mu sigma elbo)
-          (infer:vi log-pdf 1
+          (infer:vi log-pdf '(0.0d0)
             :n-iterations 2000 :n-elbo-samples 10 :lr 0.05d0)
         (declare (ignore elbo))
         (ok (approx= (first mu) 0.0d0 0.3d0))
@@ -19,7 +19,7 @@
     (let ((log-pdf (lambda (p)
                      (dist:normal-log-pdf (first p) :mu 3.0d0 :sigma 0.5d0))))
       (multiple-value-bind (mu sigma elbo)
-          (infer:vi log-pdf 1
+          (infer:vi log-pdf '(0.0d0)
             :n-iterations 2000 :n-elbo-samples 10 :lr 0.05d0)
         (declare (ignore elbo))
         (ok (approx= (first mu) 3.0d0 0.3d0))
@@ -33,7 +33,7 @@
                            (let ((shifted (ad:- (second p) 2.0d0)))
                              (ad:* -0.5d0 (ad:* shifted shifted)))))))
       (multiple-value-bind (mu sigma elbo)
-          (infer:vi log-pdf 2
+          (infer:vi log-pdf '(0.0d0 0.0d0)
             :n-iterations 2000 :n-elbo-samples 10 :lr 0.05d0)
         (declare (ignore elbo))
         (ok (approx= (first mu) 0.0d0 0.3d0))
@@ -47,7 +47,7 @@
     (let ((log-pdf (lambda (p)
                      (dist:normal-log-pdf (first p) :mu 5.0d0 :sigma 1.0d0))))
       (multiple-value-bind (mu sigma elbo)
-          (infer:vi log-pdf 1
+          (infer:vi log-pdf '(0.0d0)
             :n-iterations 1000 :n-elbo-samples 20 :lr 0.05d0)
         (declare (ignore mu sigma))
         ;; Compare first 50 vs iterations 400-500 for robust signal

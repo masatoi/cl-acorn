@@ -61,7 +61,7 @@ PARAMS is a list (w b). Uses AD-transparent arithmetic for gradient computation.
   (format t "Data: ~D observations~%~%" (length *data-xs*))
   (format t "Running VI (2000 iterations)...~%")
   (multiple-value-bind (mu-list sigma-list elbo-history)
-      (infer:vi #'log-posterior 2
+      (infer:vi #'log-posterior '(0.0d0 0.0d0)
                 :n-iterations 2000
                 :n-elbo-samples 10
                 :lr 0.01d0)

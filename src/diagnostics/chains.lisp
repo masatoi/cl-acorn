@@ -36,7 +36,9 @@ Returns a new list of double-float values."
                         (n-warmup    500)
                         (sampler    :nuts)
                         (adapt-step-size t)
-                        (step-size  0.1d0))
+                        (step-size  0.1d0)
+                        n-leapfrog
+                        max-tree-depth)
   "Run N-CHAINS independent MCMC chains and return a CHAIN-RESULT.
 
 Each chain starts from INITIAL-PARAMS perturbed by N(0, 0.1) jitter to
@@ -52,18 +54,34 @@ N-WARMUP: warmup samples per chain, discarded before diagnostics (default 500)
 SAMPLER: :nuts (default) or :hmc
 ADAPT-STEP-SIZE: whether to adapt step size during warmup (default t)
 STEP-SIZE: initial step size (default 0.1)
+N-LEAPFROG: HMC-specific number of leapfrog steps (nil means use sampler default;
+             ignored when SAMPLER is :nuts)
+MAX-TREE-DEPTH: NUTS-specific maximum tree depth (nil means use sampler default;
+                ignored when SAMPLER is :hmc)
 
 Returns a CHAIN-RESULT struct."
-  (assert (and (listp initial-params) (consp initial-params)) nil
-          "run-chains: INITIAL-PARAMS must be a non-empty list")
-  (assert (and (integerp n-chains) (plusp n-chains)) nil
-          "run-chains: N-CHAINS must be a positive integer")
-  (assert (and (integerp n-samples) (plusp n-samples)) nil
-          "run-chains: N-SAMPLES must be a positive integer")
-  (assert (and (integerp n-warmup) (not (minusp n-warmup))) nil
-          "run-chains: N-WARMUP must be a non-negative integer")
-  (assert (> step-size 0.0d0) nil
-          "run-chains: STEP-SIZE must be a positive number")
+  (unless (member sampler '(:nuts :hmc))
+    (error "run-chains: SAMPLER must be :nuts or :hmc, got ~S" sampler))
+  (unless (and (listp initial-params) (consp initial-params))
+    (error 'cl-acorn.inference:invalid-parameter-error
+           :parameter :initial-params :value initial-params
+           :message "run-chains: INITIAL-PARAMS must be a non-empty list"))
+  (unless (and (integerp n-chains) (plusp n-chains))
+    (error 'cl-acorn.inference:invalid-parameter-error
+           :parameter :n-chains :value n-chains
+           :message "run-chains: N-CHAINS must be a positive integer"))
+  (unless (and (integerp n-samples) (plusp n-samples))
+    (error 'cl-acorn.inference:invalid-parameter-error
+           :parameter :n-samples :value n-samples
+           :message "run-chains: N-SAMPLES must be a positive integer"))
+  (unless (and (integerp n-warmup) (not (minusp n-warmup)))
+    (error 'cl-acorn.inference:invalid-parameter-error
+           :parameter :n-warmup :value n-warmup
+           :message "run-chains: N-WARMUP must be a non-negative integer"))
+  (unless (> step-size 0.0d0)
+    (error 'cl-acorn.inference:invalid-parameter-error
+           :parameter :step-size :value step-size
+           :message "run-chains: STEP-SIZE must be a positive number"))
   (let ((t0             (get-internal-real-time))
         (all-samples    (make-list n-chains))
         (all-accept     (make-list n-chains))
@@ -73,21 +91,33 @@ Returns a CHAIN-RESULT struct."
              (runner
                (ecase sampler
                  (:nuts (lambda ()
-                          (cl-acorn.inference:nuts
-                           log-pdf-fn start
-                           :n-samples n-samples
-                           :n-warmup n-warmup
-                           :step-size step-size
-                           :adapt-step-size adapt-step-size)))
+                          (let ((nuts-args (list log-pdf-fn start
+                                                 :n-samples n-samples
+                                                 :n-warmup n-warmup
+                                                 :step-size step-size
+                                                 :adapt-step-size adapt-step-size)))
+                            (when max-tree-depth
+                              (setf nuts-args
+                                    (append nuts-args
+                                            (list :max-tree-depth max-tree-depth))))
+                            (apply #'cl-acorn.inference:nuts nuts-args))))
                  (:hmc  (lambda ()
-                          (cl-acorn.inference:hmc
-                           log-pdf-fn start
-                           :n-samples n-samples
-                           :n-warmup n-warmup
-                           :step-size step-size
-                           :adapt-step-size adapt-step-size))))))
+                          (let ((hmc-args (list log-pdf-fn start
+                                                :n-samples n-samples
+                                                :n-warmup n-warmup
+                                                :step-size step-size
+                                                :adapt-step-size adapt-step-size)))
+                            (when n-leapfrog
+                              (setf hmc-args
+                                    (append hmc-args
+                                            (list :n-leapfrog n-leapfrog))))
+                            (apply #'cl-acorn.inference:hmc hmc-args)))))))
         (multiple-value-bind (samples accept-rate diag)
-            (funcall runner)
+            (handler-case
+                (funcall runner)
+              (error (c)
+                (warn "Chain ~D failed (starting params ~S): ~A" i start c)
+                (error c)))
           (setf (nth i all-samples) samples)
           (setf (nth i all-accept)  (float accept-rate 0.0d0))
           (incf total-div

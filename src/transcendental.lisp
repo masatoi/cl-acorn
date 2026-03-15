@@ -74,16 +74,20 @@
 (defmethod unary-log ((x dual))
   (let ((a (dual-real x))
         (b (dual-epsilon x)))
+    ;; Guard M5: log undefined for non-positive reals; return sentinel with zero gradient
+    (when (<= a 0.0d0)
+      (return-from unary-log (make-dual most-negative-double-float 0.0d0)))
     (make-dual (cl:log a)
                (cl:/ b a))))
 
 (defmethod unary-log ((x number))
-  (cl:log x))
+  (cl:log (coerce x 'double-float)))
 
 (defun log (x &optional base)
-  "Logarithm supporting dual numbers. Without base, returns natural log."
+  "Logarithm supporting dual numbers and tape nodes. Without base, returns natural log.
+Change-of-base: log_b(x) = ln(x) / ln(b). Both x and base may be dual numbers or tape nodes."
   (if base
-      (binary-div (unary-log x) (unary-log (coerce base 'double-float)))
+      (binary-div (unary-log x) (unary-log base))
       (unary-log x)))
 
 (defgeneric ad-sqrt (x)
@@ -128,6 +132,14 @@
   (let ((a (dual-real base))
         (b (dual-epsilon base))
         (n (coerce power 'double-float)))
+    ;; Special case: x^0 = 1 for all x (including x=0); d/dx[x^0] = 0
+    (when (zerop n)
+      (return-from binary-expt (make-dual 1.0d0 0.0d0)))
+    ;; Guard M4: a=0 with n<=1 -> derivative term 0^(n-1) diverges (n*0^neg*b = NaN)
+    ;; n=1: derivative is b (correct); n<1: gradient is +inf, return 0 as sentinel
+    (when (and (zerop a) (<= n 1.0d0))
+      (return-from binary-expt
+        (make-dual 0.0d0 (if (= n 1.0d0) b 0.0d0))))
     (make-dual (cl:expt a n)
                (cl:* n (cl:expt a (cl:- n 1.0d0)) b))))
 
@@ -135,6 +147,17 @@
   (let ((c (coerce base 'double-float))
         (a (dual-real power))
         (b (dual-epsilon power)))
+    ;; Special case: 0^0 = 1 by convention; d/da[0^a] at a=0 -> 0 by limit
+    (when (and (zerop c) (zerop a))
+      (return-from binary-expt (make-dual 1.0d0 0.0d0)))
+    ;; Guard: 0^a = 0 for a > 0; derivative 0^a * ln(0) -> 0 by limit
+    (when (zerop c)
+      (return-from binary-expt (make-dual 0.0d0 0.0d0)))
+    ;; Guard M3: negative base -> cl:expt returns complex for non-integer exponent;
+    ;; preserve real part, zero gradient (undefined derivative)
+    (when (< c 0.0d0)
+      (return-from binary-expt
+        (make-dual (coerce (cl:realpart (cl:expt c a)) 'double-float) 0.0d0)))
     (let ((ca (cl:expt c a)))
       (make-dual ca
                  (cl:* ca (cl:log c) b)))))

@@ -22,6 +22,7 @@
    #:invalid-initial-params-error-params
    #:non-finite-gradient-error
    #:non-finite-gradient-error-params
+   #:non-finite-gradient-error-message
    ;; Warnings
    #:high-divergence-warning
    #:high-divergence-warning-n-divergences
@@ -30,11 +31,9 @@
    #:use-fallback-params
    #:return-empty-samples
    #:continue-with-warnings
-   ;; Diagnostics struct + accessors
+   ;; Diagnostics struct + accessors (make-inference-diagnostics / copy-inference-diagnostics are internal)
    #:inference-diagnostics
    #:inference-diagnostics-p
-   #:make-inference-diagnostics
-   #:copy-inference-diagnostics
    #:diagnostics-accept-rate
    #:diagnostics-n-divergences
    #:diagnostics-final-step-size

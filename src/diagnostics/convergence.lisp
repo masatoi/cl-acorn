@@ -14,7 +14,8 @@ Returns list of lists: one list per chain of double-float values."
           chains))
 
 (defun mean-of (xs)
-  "Arithmetic mean of a list of numbers."
+  "Arithmetic mean of a list of numbers. Returns 0.0d0 for empty list."
+  (when (null xs) (return-from mean-of 0.0d0))
   (/ (reduce #'+ xs :initial-value 0.0d0) (float (length xs) 0.0d0)))
 
 (defun variance-of (xs)
@@ -31,7 +32,10 @@ Returns list of lists: one list per chain of double-float values."
 
 (defun r-hat-1 (param-chains)
   "Compute R-hat for a single parameter.
-PARAM-CHAINS: list of chains, each chain is a list of double-float."
+PARAM-CHAINS: list of chains, each chain is a list of double-float.
+Returns 1.0d0 when fewer than 2 chains are provided (R-hat is undefined)."
+  (when (< (length param-chains) 2)
+    (return-from r-hat-1 1.0d0))
   (let* ((n           (float (length (first param-chains)) 0.0d0))
          (chain-vars  (mapcar #'variance-of param-chains))
          (w           (mean-of chain-vars))
@@ -67,11 +71,17 @@ Returns a list of double-float R-hat values, one per parameter."
 
 (defun bulk-ess-1 (param-chains)
   "Compute bulk ESS for a single parameter.
-PARAM-CHAINS: list of chains, each a list of double-float."
+PARAM-CHAINS: list of chains, each a list of double-float.
+Returns 1.0d0 when all samples are identical (zero variance, stuck chain)."
   (let ((mn          (float (* (length param-chains)
                                (length (first param-chains))) 0.0d0))
         (all-samples (apply #'append param-chains))
         (rho-sum     0.0d0))
+    ;; Guard: zero overall variance means a stuck chain; autocorrelation
+    ;; returns 0.0 for all lags (due to the (< v 1d-15) guard), so the
+    ;; naive formula would report ESS = mn instead of the correct ~1.
+    (when (< (variance-of all-samples) 1d-15)
+      (return-from bulk-ess-1 1.0d0))
     ;; Sum autocorrelations until they go negative (Geyer's initial monotone rule)
     (loop for lag from 1 to (min 100 (1- (length all-samples)))
           for rho = (autocorrelation all-samples lag)
@@ -108,6 +118,9 @@ Returns a list of double-float ESS values."
 (defun tail-ess-1 (param-chains)
   "Compute tail ESS for a single parameter.
 Uses ESS of I(x<=Q25) and I(x<=Q75); returns their minimum."
+  ;; Guard: any chain with zero samples is degenerate; return 1.0 (consistent with bulk-ess-1)
+  (when (some #'null param-chains)
+    (return-from tail-ess-1 1.0d0))
   (let* ((all-samples (apply #'append param-chains))
          (q25 (quantile all-samples 0.25d0))
          (q75 (quantile all-samples 0.75d0)))

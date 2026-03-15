@@ -204,16 +204,27 @@ with target acceptance rate 0.80.
 Returns (values samples accept-rate diagnostics) where SAMPLES is a list of
 parameter lists, ACCEPT-RATE is the mean acceptance probability, and DIAGNOSTICS
 is an INFERENCE-DIAGNOSTICS struct with timing, divergence count, and step-size."
-  (assert (and (listp initial-params) (consp initial-params)) nil
-          "nuts: INITIAL-PARAMS must be a non-empty list")
-  (assert (and (integerp n-samples) (plusp n-samples)) nil
-          "nuts: N-SAMPLES must be a positive integer")
-  (assert (and (integerp n-warmup) (not (minusp n-warmup))) nil
-          "nuts: N-WARMUP must be a non-negative integer")
-  (assert (> step-size 0.0d0) nil "nuts: STEP-SIZE must be a positive number")
-  (assert (and (integerp max-tree-depth) (plusp max-tree-depth)
-               (<= max-tree-depth 25)) nil
-          "nuts: MAX-TREE-DEPTH must be a positive integer <= 25")
+  (unless (and (listp initial-params) (consp initial-params))
+    (error 'invalid-parameter-error
+           :parameter :initial-params :value initial-params
+           :message "nuts: INITIAL-PARAMS must be a non-empty list"))
+  (unless (and (integerp n-samples) (plusp n-samples))
+    (error 'invalid-parameter-error
+           :parameter :n-samples :value n-samples
+           :message "nuts: N-SAMPLES must be a positive integer"))
+  (unless (and (integerp n-warmup) (not (minusp n-warmup)))
+    (error 'invalid-parameter-error
+           :parameter :n-warmup :value n-warmup
+           :message "nuts: N-WARMUP must be a non-negative integer"))
+  (unless (> step-size 0.0d0)
+    (error 'invalid-parameter-error
+           :parameter :step-size :value step-size
+           :message "nuts: STEP-SIZE must be a positive number"))
+  (unless (and (integerp max-tree-depth) (plusp max-tree-depth)
+               (<= max-tree-depth 25))
+    (error 'invalid-parameter-error
+           :parameter :max-tree-depth :value max-tree-depth
+           :message "nuts: MAX-TREE-DEPTH must be a positive integer <= 25"))
   (let* ((*log-pdf-error-warned-p* nil)
          (current-q (mapcar (lambda (x) (coerce x 'double-float)) initial-params))
          (n-dim (length current-q))

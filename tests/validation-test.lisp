@@ -204,16 +204,16 @@
   (let ((dummy-fn (lambda (params)
                     (declare (ignore params))
                     0.0d0)))
-    (testing "vi signals error for n-params = 0"
-      (ok (signals (infer:vi dummy-fn 0))))
-    (testing "vi signals error for non-integer n-params"
-      (ok (signals (infer:vi dummy-fn 1.5d0))))
+    (testing "vi signals error for empty initial-params"
+      (ok (signals (infer:vi dummy-fn '()))))
+    (testing "vi signals error for non-list initial-params"
+      (ok (signals (infer:vi dummy-fn 1))))
     (testing "vi signals error for n-iterations = 0"
-      (ok (signals (infer:vi dummy-fn 1 :n-iterations 0))))
+      (ok (signals (infer:vi dummy-fn '(0.0d0) :n-iterations 0))))
     (testing "vi signals error for non-positive lr"
-      (ok (signals (infer:vi dummy-fn 1 :lr 0.0d0))))
+      (ok (signals (infer:vi dummy-fn '(0.0d0) :lr 0.0d0))))
     (testing "vi signals error for n-elbo-samples = 0"
-      (ok (signals (infer:vi dummy-fn 1 :n-elbo-samples 0))))))
+      (ok (signals (infer:vi dummy-fn '(0.0d0) :n-elbo-samples 0))))))
 
 ;;; --- Optimizer validation ---
 

@@ -392,3 +392,119 @@
       (multiple-value-bind (waic-a) (diag:waic cr-a log-lik-fn data)
         (multiple-value-bind (waic-b) (diag:waic cr-b log-lik-fn data)
           (ok (< waic-a waic-b)))))))
+
+;;; -------------------------------------------------------------------------
+;;; Regression tests for fixed bugs
+;;; -------------------------------------------------------------------------
+
+(deftest test-log-sum-exp-empty-list
+  (testing "log-sum-exp on empty list returns most-negative-double-float (Bug 3)"
+    (ok (= (cl-acorn.diagnostics::log-sum-exp '())
+           most-negative-double-float))))
+
+(deftest test-mean-of-empty-list
+  (testing "mean-of on empty list returns 0.0d0 without NaN (Bug 4)"
+    (let ((result (cl-acorn.diagnostics::mean-of '())))
+      (ok (= result 0.0d0)))))
+
+(deftest test-psis-smooth-weights-small-input
+  (testing "psis-smooth-weights on < 5 samples returns uniform weights and k=0 (Bug 1)"
+    (dolist (n '(1 2 3 4))
+      (let ((log-weights (make-list n :initial-element 0.0d0)))
+        (multiple-value-bind (weights k-hat)
+            (cl-acorn.diagnostics::psis-smooth-weights log-weights)
+          (ok (= (length weights) n))
+          (ok (= k-hat 0.0d0))
+          (ok (every (lambda (w) (approx= w (/ 1.0d0 n))) weights)))))))
+
+(deftest test-waic-errors-on-zero-samples
+  (testing "waic signals error with 0 posterior samples (Bug 2)"
+    (let* ((cr (make-trivial-chain-result (list '())))
+           (log-lik-fn (lambda (params yi)
+                         (declare (ignore params yi)) 0.0d0))
+           (data '(1.0d0)))
+      (ok (signals (diag:waic cr log-lik-fn data) 'error)))))
+
+(deftest test-waic-errors-on-one-sample
+  (testing "waic signals error with 1 posterior sample (Bug 2)"
+    (let* ((cr (make-trivial-chain-result (list (list (list 0.0d0)))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data '(0.0d0)))
+      (ok (signals (diag:waic cr log-lik-fn data) 'error)))))
+
+(deftest test-loo-errors-on-zero-samples
+  (testing "loo signals error with 0 posterior samples (Bug 2)"
+    (let* ((cr (make-trivial-chain-result (list '())))
+           (log-lik-fn (lambda (params yi)
+                         (declare (ignore params yi)) 0.0d0))
+           (data '(1.0d0)))
+      (ok (signals (diag:loo cr log-lik-fn data) 'error)))))
+
+(deftest test-loo-errors-on-one-sample
+  (testing "loo signals error with 1 posterior sample (Bug 2)"
+    (let* ((cr (make-trivial-chain-result (list (list (list 0.0d0)))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data '(0.0d0)))
+      (ok (signals (diag:loo cr log-lik-fn data) 'error)))))
+
+(deftest test-fit-pareto-shape-filters-zero-weights
+  (testing "fit-pareto-shape ignores zero/negative weights without extreme k-hat (Bug 5)"
+    ;; Zero weight at position 0 used to produce a huge k-hat via log(big / 1d-300)
+    (let* ((tail-weights (list 0.0d0 1.0d-5 2.0d-5 3.0d-5 4.0d-5
+                               5.0d-5 6.0d-5 7.0d-5 8.0d-5 9.0d-5))
+           (k-hat (cl-acorn.diagnostics::fit-pareto-shape tail-weights)))
+      ;; Without the fix, k-hat would be absurdly large (e.g., > 100).
+      ;; With the fix, zero is filtered, leaving 9 positive weights.
+      (ok (< k-hat 100.0d0)))))
+
+(deftest test-fit-pareto-shape-all-zero-returns-zero
+  (testing "fit-pareto-shape with all zero weights returns 0.0d0 (Bug 5)"
+    (let ((k-hat (cl-acorn.diagnostics::fit-pareto-shape
+                  (make-list 10 :initial-element 0.0d0))))
+      (ok (= k-hat 0.0d0)))))
+
+(deftest test-psis-smooth-weights-no-negative-on-ties
+  (testing "C1: psis-smooth-weights with all-equal log-weights (many ties) returns no negative weights"
+    ;; When all log-weights are identical, every raw weight equals 1.0 after
+    ;; normalization by max. The tail threshold is also 1.0, so every index
+    ;; qualifies as a tail index — more than m entries.  Before the fix,
+    ;; rank > m produced q > 1 and z < 0 with the Pareto formula.
+    (let* ((n 30)
+           (log-weights (make-list n :initial-element 0.0d0)))
+      (multiple-value-bind (weights k-hat)
+          (cl-acorn.diagnostics::psis-smooth-weights log-weights)
+        (declare (ignore k-hat))
+        (ok (= (length weights) n))
+        ;; All smoothed, normalized weights must be non-negative.
+        (ok (every (lambda (w) (>= w 0.0d0)) weights))))))
+
+(deftest test-bulk-ess-stuck-chain-returns-small-value
+  (testing "C2: bulk-ess on a stuck chain (all identical samples) returns ~1, not chain length"
+    ;; A chain where every sample is the same value has zero variance.
+    ;; Before the fix, autocorrelation returned 0 for every lag (variance guard),
+    ;; so ESS = mn / (1 + 0) = mn -- falsely implying perfect mixing.
+    (let* ((stuck-value 3.14d0)
+           (chains (list (make-list 50 :initial-element (list stuck-value))
+                         (make-list 50 :initial-element (list stuck-value))))
+           (ess (diag:bulk-ess chains)))
+      (ok (listp ess))
+      (ok (= (length ess) 1))
+      ;; ESS must be small -- certainly not close to 100 (the full chain length).
+      (ok (<= (first ess) 10.0d0)))))
+
+(deftest test-r-hat-single-chain-returns-one
+  (testing "M2: r-hat with a single chain returns exactly 1.0, not a value < 1.0"
+    ;; With 1 chain, between-chain variance B = 0, so v-hat = (n-1)/n * W,
+    ;; giving r-hat = sqrt((n-1)/n) < 1.  R-hat is undefined for a single
+    ;; chain and must return 1.0 by convention.
+    (let* ((single-chain (list (loop repeat 50
+                                     collect (list (dist:normal-sample
+                                                    :mu 0.0d0 :sigma 1.0d0)))))
+           (rhat (diag:r-hat single-chain)))
+      (ok (listp rhat))
+      (ok (= (length rhat) 1))
+      (ok (= (first rhat) 1.0d0)))))

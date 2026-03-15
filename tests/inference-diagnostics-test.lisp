@@ -54,7 +54,7 @@
 (deftest test-vi-returns-diagnostics
   (testing "vi returns inference-diagnostics as 4th value"
     (multiple-value-bind (mu sigma elbo diag)
-        (infer:vi *std-normal* 1 :n-iterations 100 :n-elbo-samples 5)
+        (infer:vi *std-normal* '(0.0d0) :n-iterations 100 :n-elbo-samples 5)
       (declare (ignore mu sigma elbo))
       (ok (infer:inference-diagnostics-p diag))
       (ok (= (infer:diagnostics-n-samples diag) 100))

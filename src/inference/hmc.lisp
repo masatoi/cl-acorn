@@ -24,22 +24,32 @@ Bound to NIL at the start of each top-level inference call (hmc, nuts, vi).")
   "Call ad:gradient with float traps masked. Returns (values val grad) or
 (values nil nil) if any error occurs (arithmetic or user function errors).
 Warns once per inference call for non-arithmetic errors."
-  (handler-case
-      (with-float-traps-masked
-        (multiple-value-bind (val grad) (ad:gradient log-pdf-fn q)
-          (let ((val-d (coerce val 'double-float)))
-            (if (and (finite-double-p val-d)
-                     (every-finite-p grad))
-                (values val-d grad)
-                (values nil nil)))))
-    (arithmetic-error () (values nil nil))
-    (error (c)
-      (unless *log-pdf-error-warned-p*
-        (warn "safe-gradient: caught ~A in log-pdf-fn: ~A~%~
+  (let ((non-finite-p nil))
+    (multiple-value-bind (val grad)
+        (handler-case
+            (with-float-traps-masked
+              (multiple-value-bind (val grad) (ad:gradient log-pdf-fn q)
+                (let ((val-d (coerce val 'double-float)))
+                  (if (and (finite-double-p val-d)
+                           (every-finite-p grad))
+                      (values val-d grad)
+                      (progn
+                        (setf non-finite-p t)
+                        (values nil nil))))))
+          (arithmetic-error () (values nil nil))
+          (error (c)
+            (unless *log-pdf-error-warned-p*
+              (warn "safe-gradient: caught ~A in log-pdf-fn: ~A~%~
                Further non-arithmetic errors will be suppressed for this call."
-              (type-of c) c)
-        (setf *log-pdf-error-warned-p* t))
-      (values nil nil))))
+                    (type-of c) c)
+              (setf *log-pdf-error-warned-p* t))
+            (values nil nil)))
+      ;; Signal AFTER exiting handler-case so user handlers can catch it
+      (when non-finite-p
+        (signal 'non-finite-gradient-error
+                :params q
+                :message "non-finite log-pdf value or gradient"))
+      (values val grad))))
 
 (defun compute-kinetic-energy (momentum)
   "Kinetic energy: 0.5 * sum(p_i^2)."
@@ -141,20 +151,32 @@ When ADAPT-STEP-SIZE is true, uses dual averaging to adapt step-size during warm
 Returns (values samples accept-rate diagnostics) where SAMPLES is a list of
 parameter lists, ACCEPT-RATE is the fraction of accepted proposals after warmup,
 and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats."
-  (assert (and (listp initial-params) (consp initial-params)) nil
-          "hmc: INITIAL-PARAMS must be a non-empty list")
-  (assert (and (integerp n-samples) (plusp n-samples)) nil
-          "hmc: N-SAMPLES must be a positive integer")
-  (assert (and (integerp n-warmup) (not (minusp n-warmup))) nil
-          "hmc: N-WARMUP must be a non-negative integer")
-  (assert (> step-size 0.0d0) nil "hmc: STEP-SIZE must be a positive number")
-  (assert (and (integerp n-leapfrog) (plusp n-leapfrog)) nil
-          "hmc: N-LEAPFROG must be a positive integer")
+  (unless (and (listp initial-params) (consp initial-params))
+    (error 'invalid-parameter-error
+           :parameter :initial-params :value initial-params
+           :message "hmc: INITIAL-PARAMS must be a non-empty list"))
+  (unless (and (integerp n-samples) (plusp n-samples))
+    (error 'invalid-parameter-error
+           :parameter :n-samples :value n-samples
+           :message "hmc: N-SAMPLES must be a positive integer"))
+  (unless (and (integerp n-warmup) (not (minusp n-warmup)))
+    (error 'invalid-parameter-error
+           :parameter :n-warmup :value n-warmup
+           :message "hmc: N-WARMUP must be a non-negative integer"))
+  (unless (> step-size 0.0d0)
+    (error 'invalid-parameter-error
+           :parameter :step-size :value step-size
+           :message "hmc: STEP-SIZE must be a positive number"))
+  (unless (and (integerp n-leapfrog) (plusp n-leapfrog))
+    (error 'invalid-parameter-error
+           :parameter :n-leapfrog :value n-leapfrog
+           :message "hmc: N-LEAPFROG must be a positive integer"))
   (let* ((*log-pdf-error-warned-p* nil)
          (current-q (mapcar (lambda (x) (coerce x 'double-float)) initial-params))
          (n-dim (length current-q))
          (samples nil)
          (n-accepted 0)
+         (n-divergences 0)
          (total-iterations (+ n-samples n-warmup))
          (step-size (coerce step-size 'double-float))
          (da-state (when (and adapt-step-size (plusp n-warmup))
@@ -201,7 +223,9 @@ and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats
               ;; Diverged: reject proposal, adapt with accept-prob=0
               ((null proposed-q)
                (when (and da-state (< iter n-warmup))
-                 (setf step-size (dual-avg-update da-state 0.0d0))))
+                 (setf step-size (dual-avg-update da-state 0.0d0)))
+               (when (>= iter n-warmup)
+                 (incf n-divergences)))
               ;; Current state non-finite: always accept finite proposals
               ((not (finite-double-p current-h))
                (setf current-q proposed-q
@@ -234,13 +258,25 @@ and DIAGNOSTICS is an INFERENCE-DIAGNOSTICS struct with timing and summary stats
         ;; Collect sample after warmup
         (when (>= iter n-warmup)
           (push (copy-list current-q) samples))))
+    ;; Warn if divergence rate exceeds threshold
+    (when (and (> n-divergences 0)
+               (> (/ (float n-divergences 0.0d0)
+                     (float (max 1 n-samples) 0.0d0))
+                  0.10d0))
+      (restart-case
+          (warn 'high-divergence-warning
+                :n-divergences n-divergences
+                :n-samples n-samples)
+        (continue-with-warnings ()
+          :report "Continue and return results despite high divergences"
+          nil)))
     (let ((accept-rate (/ (coerce n-accepted 'double-float)
                           (coerce n-samples 'double-float))))
       (values (nreverse samples)
               accept-rate
               (make-inference-diagnostics
                :accept-rate accept-rate
-               :n-divergences 0
+               :n-divergences n-divergences
                :final-step-size step-size
                :n-samples n-samples
                :n-warmup n-warmup

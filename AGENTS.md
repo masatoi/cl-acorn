@@ -6,6 +6,36 @@ This repository is intended to be developed with `cl-mcp` tooling. Prefer the
 Common Lisp MCP tools for exploration, editing, evaluation, and testing over
 ad hoc shell-driven workflows.
 
+## Required cl-mcp Workflow For Lisp Files
+
+  Before Lisp file operations, call `fs-set-project-root` with the current project root.
+
+  For `.lisp` and `.asd` files:
+  - use `lisp-read-file` for reading
+  - use `clgrep-search` for project-wide search
+  - use `load-system` for loading or reloading ASDF systems
+  - use `repl-eval` for small experiments and immediate verification
+  - use `run-tests` for test execution
+
+  For existing `.lisp` files:
+  - you MUST use `lisp-edit-form` or `lisp-patch-form` for edits
+  - do NOT use `fs-write-file` on existing Lisp source files
+  - do NOT use text-based patching tools for existing Lisp source unless the structured tools are unavailable
+
+  Follow this loop for substantial Lisp changes:
+  1. Explore the relevant code and tests
+  2. Experiment with small forms in the REPL
+  3. Persist the minimal correct change with structured editing tools
+  4. Verify with targeted tests, then broader tests if needed
+
+  After editing a Lisp file, explicitly reload the affected system with `load-system` or re-evaluate the changed forms. File edits are not automatically
+  visible to the worker process.
+
+  When creating a new Lisp file:
+  - write a minimal valid file first
+  - verify structure with `lisp-check-parens` if needed
+  - then extend it using `lisp-edit-form`
+
 ## Agent Guidelines
 
 Read these files before making substantial Common Lisp changes:
@@ -13,19 +43,42 @@ Read these files before making substantial Common Lisp changes:
 - `prompts/repl-driven-development.md` (required: load and follow this workflow)
 - `agents/common-lisp-expert.md`
 
-Use a `cl-mcp` REPL-driven workflow whenever possible:
+### Required `cl-mcp` Workflow For Lisp Work
+
+Before Lisp file operations, call `fs-set-project-root` with the current project
+root.
+
+Use this loop for substantial Common Lisp changes:
 
 1. Explore the relevant package, tests, and examples.
-2. Experiment with small forms before committing to a larger edit.
+2. Experiment with small forms in the REPL before making larger edits.
 3. Persist the minimal correct change.
 4. Verify with targeted tests, then broader tests if the surface area grew.
 
-For Lisp work, prefer `cl-mcp` tools such as:
+For `.lisp` and `.asd` files:
 
-- `lisp-read-file` and `clgrep-search` for reading and search
-- `load-system` and `repl-eval` for interactive development
-- `lisp-edit-form` / `lisp-patch-form` for source edits
-- `run-tests` for test execution
+- use `lisp-read-file` for reading
+- use `clgrep-search` for project-wide search
+- use `load-system` for loading or reloading ASDF systems
+- use `repl-eval` for small experiments and immediate verification
+- use `run-tests` for test execution
+
+For existing `.lisp` files:
+
+- you MUST use `lisp-edit-form` or `lisp-patch-form` for edits
+- do NOT use `fs-write-file` on existing Lisp source files
+- do NOT use text-based patching tools for existing Lisp source unless the
+  structured tools are unavailable
+
+After editing a Lisp file, explicitly reload the affected system with
+`load-system` or re-evaluate the changed forms. File edits are not automatically
+visible to the worker process.
+
+When creating a new Lisp file:
+
+- write a minimal valid file first
+- verify structure with `lisp-check-parens` if needed
+- then extend it using `lisp-edit-form`
 
 ## Project Overview
 

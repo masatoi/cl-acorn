@@ -47,8 +47,7 @@ Returns the new step-size to use for the next iteration."
          (mu (dual-avg-state-mu state))
          ;; Clamp and sanitize accept-prob: NaN/Inf -> 0
          (accept-prob-d (coerce accept-prob 'double-float))
-         (accept-prob (if (and (not (sb-ext:float-nan-p accept-prob-d))
-                               (not (sb-ext:float-infinity-p accept-prob-d)))
+         (accept-prob (if (finite-double-p accept-prob-d)
                           (max 0.0d0 (min 1.0d0 accept-prob-d))
                           0.0d0))
          ;; Update H-bar: running mean of (target - accept-prob)

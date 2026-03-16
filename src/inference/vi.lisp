@@ -16,10 +16,10 @@ VAR-PARAMS is [mu_1..mu_n, log_sigma_1..log_sigma_n]. O(n) traversal."
     (loop for cell on (nthcdr n-params result)
           for v = (coerce (car cell) 'double-float)
           do (setf (car cell)
-                   (if (or (sb-ext:float-nan-p v)
-                           (sb-ext:float-infinity-p v))
+                   (if (finite-double-p v)
+                       (max +log-sigma-min+ (min +log-sigma-max+ v))
                        0.0d0
-                       (max +log-sigma-min+ (min +log-sigma-max+ v)))))
+                       )))
     result))
 
 (defun clip-gradients (grads)
@@ -46,23 +46,11 @@ Returns (values mu-list sigma-list elbo-history diagnostics) where:
   SIGMA-LIST: posterior standard deviation estimates
   ELBO-HISTORY: list of ELBO values over iterations
   DIAGNOSTICS: an INFERENCE-DIAGNOSTICS struct with timing and summary stats."
-  (unless (and (listp initial-params) (consp initial-params))
-    (error 'invalid-parameter-error
-           :parameter :initial-params :value initial-params
-           :message "vi: INITIAL-PARAMS must be a non-empty list"))
-  (let ((n-params (length initial-params)))
-    (unless (and (integerp n-iterations) (plusp n-iterations))
-      (error 'invalid-parameter-error
-             :parameter :n-iterations :value n-iterations
-             :message "vi: N-ITERATIONS must be a positive integer"))
-    (unless (and (integerp n-elbo-samples) (plusp n-elbo-samples))
-      (error 'invalid-parameter-error
-             :parameter :n-elbo-samples :value n-elbo-samples
-             :message "vi: N-ELBO-SAMPLES must be a positive integer"))
-    (unless (> lr 0.0d0)
-      (error 'invalid-parameter-error
-             :parameter :lr :value lr
-             :message "vi: LR must be a positive number"))
+  (let* ((initial-params (validate-initial-params "vi" initial-params))
+         (n-params (length initial-params)))
+    (validate-positive-integer-parameter "vi" :n-iterations n-iterations)
+    (validate-positive-integer-parameter "vi" :n-elbo-samples n-elbo-samples)
+    (setf lr (validate-positive-real-parameter "vi" :lr lr))
     ;; Variational parameters: [mu_1..mu_n, log_sigma_1..log_sigma_n]
     ;; packed as a flat list of length 2*n-params
     (let* ((*log-pdf-error-warned-p* nil)
@@ -106,26 +94,17 @@ Returns (values mu-list sigma-list elbo-history diagnostics) where:
                      var-params))
                 (arithmetic-error () (values nil nil))
                 (error (c)
-                  (unless *log-pdf-error-warned-p*
-                    (warn "vi: caught ~A in log-pdf-fn: ~A~%~
-                           Further non-arithmetic errors will be suppressed."
-                          (type-of c) c)
-                    (setf *log-pdf-error-warned-p* t))
+                  (warn-log-pdf-error-once "vi" c)
                   (values nil nil)))
             ;; Skip iteration if gradient computation failed
-            (when (and neg-elbo grads
-                       (every (lambda (g)
-                                (let ((gd (coerce g 'double-float)))
-                                  (and (not (sb-ext:float-nan-p gd))
-                                       (not (sb-ext:float-infinity-p gd)))))
-                              grads))
+            (when (and neg-elbo grads (every-finite-p grads))
               ;; Record ELBO (negate back since we computed -ELBO)
               (push (- (coerce neg-elbo 'double-float)) elbo-history)
               ;; Clip gradients to prevent g*g overflow in Adam's v computation
               (let ((clipped-grads (clip-gradients grads)))
                 ;; Adam update
                 (setf var-params (opt:adam-step var-params clipped-grads adam-state
-                                               :lr (coerce lr 'double-float))))
+                                               :lr lr)))
               ;; Clamp log-sigma to prevent overflow on next iteration
               (setf var-params (clamp-log-sigmas var-params n-params)))))))
       ;; Warn if optimization never succeeded
@@ -138,17 +117,13 @@ Returns (values mu-list sigma-list elbo-history diagnostics) where:
             (sigma-list (mapcar (lambda (x)
                                   (exp (coerce x 'double-float)))
                                 (subseq var-params n-params))))
-        (when (some (lambda (m) (or (sb-ext:float-nan-p m)
-                                     (sb-ext:float-infinity-p m)))
-                    mu-list)
+        (when (some (lambda (m) (not (finite-double-p m))) mu-list)
           (warn "vi: Some mu values are non-finite. Results may be unreliable."))
         (values mu-list sigma-list (nreverse elbo-history)
-                (make-inference-diagnostics
-                 :accept-rate 0.0d0       ; not applicable for VI
+                (make-final-diagnostics
+                 :accept-rate 0.0d0
                  :n-divergences 0
-                 :final-step-size (coerce lr 'double-float)
+                 :final-step-size lr
                  :n-samples n-iterations
                  :n-warmup 0
-                 :elapsed-seconds (/ (float (- (get-internal-real-time) start-time)
-                                            0.0d0)
-                                     internal-time-units-per-second)))))))
+                 :start-time start-time))))))

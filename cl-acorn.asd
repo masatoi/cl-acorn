@@ -37,6 +37,7 @@
                   :components
                   ((:file "package")
                    (:file "conditions")
+                   (:file "util")
                    (:file "dual-avg")
                    (:file "hmc")
                    (:file "nuts")

@@ -206,6 +206,20 @@ For Common Lisp development in this repository:
 Use shell commands mainly for git, simple repository inspection, or when the
 user explicitly requests them.
 
+### Record `cl-mcp` Feedback
+
+When implementation work uses `cl-mcp`, accumulate concise feedback in
+`docs/cl-mcp-feedback/`.
+
+- treat `docs/cl-mcp-feedback/` as the canonical location for new `cl-mcp`
+  usage notes
+- create or update a dated Markdown file for the task or session, for example
+  `YYYY-MM-DD-short-topic.md`
+- capture concrete friction points, successful usage patterns, workarounds, and
+  suggestions that would improve the tool or workflow
+- keep entries short and specific so later agents can reuse the feedback during
+  similar work
+
 ### Respect Numeric Conventions
 
 This codebase consistently coerces numeric inputs and outputs to

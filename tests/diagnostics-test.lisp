@@ -153,6 +153,24 @@
       (ok (diag:chain-result-p cr))
       (ok (= (diag:chain-result-n-chains cr) 2)))))
 
+(deftest test-run-chains-validates-n-chains-condition
+  (testing "run-chains signals invalid-parameter-error for non-positive n-chains"
+    (let ((caught nil))
+      (handler-case
+          (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                           :n-chains 0)
+        (infer:invalid-parameter-error (c)
+          (setf caught t)
+          (ok (eq (infer:invalid-parameter-error-parameter c) :n-chains))
+          (ok (= (infer:invalid-parameter-error-value c) 0))))
+      (ok caught))))
+
+(deftest test-run-chains-rejects-unknown-sampler
+  (testing "run-chains rejects unsupported sampler designators"
+    (ok (signals (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
+                                  :sampler :bogus)
+                 'simple-error))))
+
 ;;; -------------------------------------------------------------------------
 ;;; WAIC tests
 ;;; -------------------------------------------------------------------------
@@ -338,6 +356,30 @@
         (declare (ignore loo-val k-hats))
         (ok (>= p-loo 0.0d0))))))
 
+(deftest test-waic-and-loo-accept-vector-data
+  (testing "waic and loo accept vector data sequences"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 40
+                            collect (list (cl-acorn.distributions:normal-sample
+                                            :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0)))
+           (data (coerce (loop repeat 6
+                               collect (cl-acorn.distributions:normal-sample
+                                        :mu 0.0d0 :sigma 1.0d0))
+                         'vector)))
+      (multiple-value-bind (waic-val p-waic lppd)
+          (diag:waic cr log-lik-fn data)
+        (ok (typep waic-val 'double-float))
+        (ok (typep p-waic 'double-float))
+        (ok (typep lppd 'double-float)))
+      (multiple-value-bind (loo-val p-loo k-hats)
+          (diag:loo cr log-lik-fn data)
+        (ok (typep loo-val 'double-float))
+        (ok (typep p-loo 'double-float))
+        (ok (= (length k-hats) (length data)))))))
+
 ;;; -------------------------------------------------------------------------
 ;;; print-model-comparison tests
 ;;; -------------------------------------------------------------------------
@@ -392,6 +434,19 @@
       (multiple-value-bind (waic-a) (diag:waic cr-a log-lik-fn data)
         (multiple-value-bind (waic-b) (diag:waic cr-b log-lik-fn data)
           (ok (< waic-a waic-b)))))))
+
+(deftest test-print-model-comparison-validates-argument-groups
+  (testing "print-model-comparison requires complete groups of four arguments"
+    (let* ((cr (make-trivial-chain-result
+                (list (loop repeat 10
+                            collect (list (cl-acorn.distributions:normal-sample
+                                            :mu 0.0d0 :sigma 1.0d0))))))
+           (log-lik-fn (lambda (params yi)
+                         (cl-acorn.distributions:normal-log-pdf
+                          yi :mu (first params) :sigma 1.0d0))))
+      (ok (signals (diag:print-model-comparison
+                    "model-a" cr log-lik-fn)
+                   'simple-error)))))
 
 ;;; -------------------------------------------------------------------------
 ;;; Regression tests for fixed bugs

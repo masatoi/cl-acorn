@@ -44,3 +44,44 @@ Implemented 3 new sub-packages (distributions, optimizers, inference) with 10 ta
 ### Suggestion
 
 Consider adding an option to `lisp-edit-form` that accepts a list of package nicknames to resolve, e.g., `"nicknames": {"ad": "cl-acorn.ad", "dist": "cl-acorn.distributions"}`. This would eliminate the primary friction point without requiring changes to the CST parser itself.
+
+## Session: 2026-03-17 — Diagnostics Test Gap Audit
+
+### Summary
+Reviewed existing diagnostics coverage, added 4 missing tests around validation and sequence handling, and verified the full `cl-acorn/tests` suite. Final result: 242 passing tests.
+
+### Tool Usage Patterns
+
+**`fs-set-project-root`**: Mandatory first step. The initial failure mode was actually helpful here because the error message from `fs-get-project-info` told me exactly how to recover.
+
+**`clgrep-search`**: Good for building a quick inventory of `src/` and `tests/` without loading systems. Broad searches over the whole tree can get verbose fast, so narrowing by directory and concern was important.
+
+**`lisp-read-file`**: Strong default for reading `.lisp` files. Collapsed/full reads made it easy to compare exported APIs, source branches, and test coverage. On a large test file, using `name_pattern` with raw output was still less surgical than expected, so I had to rely on smaller follow-up reads.
+
+**`lisp-edit-form`**: Worked well for inserting new `deftest` forms into an existing test file. `insert_after` was the right primitive for this task and preserved formatting cleanly.
+
+**`repl-eval`**: Useful for probing candidate gaps before editing. I used it to confirm that `waic`/`loo` already accept vector data and to inspect the concrete condition types raised by diagnostics helpers.
+
+**`run-tests`**: Good verification path once the worker had the system loaded. Targeted test execution was fast enough to use as a tight feedback loop before running the whole suite.
+
+### Issues & Friction
+
+1. **Worker discoverability after `load-system` with `force=true`**
+   - After editing only a test file, `load-system` on `"cl-acorn/tests"` with `force=true` dropped into a state where the worker reported `Component "cl-acorn/tests" not found`.
+   - `run-tests` then failed for the same reason until I reset the worker and re-registered the ASDF definition with `(asdf:load-asd #P"/home/wiz/cl-acorn/cl-acorn.asd")` via `repl-eval`.
+   - After that, `load-system` with `force=false` and `run-tests` both worked again.
+   - Impact: Medium. Recoverable, but surprising in a normal edit-test loop.
+
+2. **Large-result ergonomics**
+   - `clgrep-search` and `lisp-read-file` are both useful, but once the query is broad the result can become long enough that the next step is another narrowing pass rather than immediate action.
+   - This is manageable, but it rewards incremental querying more than “one big search”.
+
+### Positive Notes
+
+- The parent/worker split stayed out of the way for normal read/edit/test operations.
+- `lisp-check-parens` was a quick sanity check after structural edits.
+- Standard package nicknames in this project (`diag:`, `infer:`, `dist:`) did not interfere with `lisp-edit-form` for this test-file edit.
+
+### Suggestion
+
+If `load-system` with `force=true` clears worker state that also affects ASDF discoverability for local test systems, it would help if the tool either preserved local `.asd` registration or returned a more specific remediation hint such as “run `asdf:load-asd` on the project `.asd` and retry.”

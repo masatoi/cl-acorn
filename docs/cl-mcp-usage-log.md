@@ -85,3 +85,39 @@ Reviewed existing diagnostics coverage, added 4 missing tests around validation 
 ### Suggestion
 
 If `load-system` with `force=true` clears worker state that also affects ASDF discoverability for local test systems, it would help if the tool either preserved local `.asd` registration or returned a more specific remediation hint such as “run `asdf:load-asd` on the project `.asd` and retry.”
+
+## Session: 2026-03-17 — Diagnostics Helper Coverage Audit
+
+### Summary
+Added 4 tests covering an uncovered `run-chains` validation path plus three unreferenced diagnostics helpers (`all-chain-samples`, `chain-param`, `quantile`). Final result: 246 passing tests.
+
+### Tool Usage Patterns
+
+**`clgrep-search`**: Effective for proving absence, not just finding code. Searching for helper names across `tests/` quickly confirmed that the candidate gaps were real instead of just hard to spot in a long file.
+
+**`lisp-edit-form`**: Sequential `insert_after` edits were a good fit for adding small `deftest` forms without disturbing the surrounding file. For this style of work, the structural edit path felt safer than a text patch.
+
+**`lisp-check-parens`**: Cheap verification step after multiple insertions. Good complement to `lisp-edit-form` when several edits land in the same file.
+
+**`run-tests`**: The combination of targeted execution for just the new tests and a final full-suite run worked well. It is fast enough that there is little reason to fall back to shell-driven Rove runs here.
+
+### Issues & Friction
+
+1. **`repl-eval` input fragility on long multi-line forms**
+   - One exploratory `repl-eval` call failed with an `END-OF-FILE` reader error because the submitted form was unbalanced.
+   - The backtrace was useful, but fairly noisy for what was ultimately a simple input mistake.
+   - Impact: Low. Easy to recover, but it nudges the workflow toward smaller REPL probes.
+
+2. **Name-targeted reads still need follow-up narrowing**
+   - When locating exact insertion points in a large test file, I still needed a second pass with other tools after the initial reads.
+   - This is workable, but it means the “find exact anchor, then edit” loop is a little more manual than the search/edit experience.
+
+### Positive Notes
+
+- `fs-set-project-root` + later file operations remained predictable once initialized.
+- `clgrep-search` and `run-tests` together make test-gap auditing efficient.
+- `lisp-edit-form` handled this file cleanly even with project nicknames like `diag:` and `infer:`.
+
+### Suggestion
+
+For `repl-eval`, a lightweight preflight hint when the submitted code looks unbalanced, or a shorter default error summary before the full backtrace, would make exploratory failures easier to scan.

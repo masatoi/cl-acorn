@@ -165,6 +165,18 @@
           (ok (= (infer:invalid-parameter-error-value c) 0))))
       (ok caught))))
 
+(deftest test-run-chains-validates-initial-params-condition
+  (testing "run-chains signals invalid-parameter-error for empty initial params"
+    (let ((caught nil))
+      (handler-case
+          (diag:run-chains *std-normal-2d* '()
+                           :n-chains 1 :n-samples 5 :n-warmup 0)
+        (infer:invalid-parameter-error (c)
+          (setf caught t)
+          (ok (eq (infer:invalid-parameter-error-parameter c) :initial-params))
+          (ok (equal (infer:invalid-parameter-error-value c) '()))))
+      (ok caught))))
+
 (deftest test-run-chains-rejects-unknown-sampler
   (testing "run-chains rejects unsupported sampler designators"
     (ok (signals (diag:run-chains *std-normal-2d* '(0.0d0 0.0d0)
@@ -563,3 +575,33 @@
       (ok (listp rhat))
       (ok (= (length rhat) 1))
       (ok (= (first rhat) 1.0d0)))))
+
+(deftest test-all-chain-samples-flattens-in-chain-order
+  (testing "all-chain-samples preserves chain-major sample order"
+    (let* ((chain-result (diag:make-chain-result
+                          :samples '(((1.0d0 10.0d0) (2.0d0 20.0d0))
+                                     ((3.0d0 30.0d0) (4.0d0 40.0d0)))
+                          :n-chains 2
+                          :n-samples 2
+                          :n-warmup 0))
+           (samples (cl-acorn.diagnostics::all-chain-samples chain-result)))
+      (ok (equal samples
+                 '((1.0d0 10.0d0) (2.0d0 20.0d0)
+                   (3.0d0 30.0d0) (4.0d0 40.0d0)))))))
+
+(deftest test-chain-param-extracts-parameter-across-chains
+  (testing "chain-param extracts one parameter stream per chain as double-floats"
+    (let* ((chains '(((1 10) (2 20) (3 30))
+                     ((4 40) (5 50) (6 60))))
+           (param-values (cl-acorn.diagnostics::chain-param chains 1)))
+      (ok (equal param-values
+                 '((10.0d0 20.0d0 30.0d0)
+                   (40.0d0 50.0d0 60.0d0)))))))
+
+(deftest test-quantile-uses-floor-based-order-statistic
+  (testing "quantile picks the expected element for quartiles and upper bound"
+    (let ((xs '(9.0d0 1.0d0 5.0d0 3.0d0)))
+      (ok (= (cl-acorn.diagnostics::quantile xs 0.0d0) 1.0d0))
+      (ok (= (cl-acorn.diagnostics::quantile xs 0.25d0) 3.0d0))
+      (ok (= (cl-acorn.diagnostics::quantile xs 0.5d0) 5.0d0))
+      (ok (= (cl-acorn.diagnostics::quantile xs 1.0d0) 9.0d0)))))

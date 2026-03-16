@@ -30,6 +30,68 @@ VAR-PARAMS is [mu_1..mu_n, log_sigma_1..log_sigma_n]. O(n) traversal."
                    (min +max-grad-magnitude+ gd))))
           grads))
 
+(defun sample-vi-epsilons (n-params n-elbo-samples)
+  "Draw N-ELBO-SAMPLES standard-normal noise vectors for the VI objective."
+  (loop repeat n-elbo-samples
+        collect (loop repeat n-params
+                      collect (dist:normal-sample))))
+
+(defun negative-elbo (log-pdf-fn var-params n-params epsilons)
+  "Estimate the negative ELBO for VAR-PARAMS using the sampled EPSILONS."
+  (let* ((mus (subseq var-params 0 n-params))
+         (log-sigmas (nthcdr n-params var-params))
+         (sample-count (coerce (length epsilons) 'double-float))
+         (zero-like (ad:* 0.0d0 (first var-params)))
+         (total-log-p zero-like)
+         (entropy (reduce #'ad:+ log-sigmas :initial-value zero-like)))
+    (dolist (eps epsilons)
+      (let ((z (mapcar (lambda (mu ls e)
+                         (ad:+ mu (ad:* (ad:exp ls) e)))
+                       mus log-sigmas eps)))
+        (setf total-log-p
+              (ad:+ total-log-p (funcall log-pdf-fn z)))))
+    (ad:- (ad:+ (ad:/ total-log-p sample-count) entropy))))
+
+(defun estimate-vi-gradient (log-pdf-fn var-params n-params epsilons)
+  "Estimate the VI objective and its gradient for VAR-PARAMS."
+  (handler-case
+      (with-float-traps-masked
+        (ad:gradient (lambda (vp)
+                       (negative-elbo log-pdf-fn vp n-params epsilons))
+                     var-params))
+    (arithmetic-error () (values nil nil))
+    (error (c)
+      (warn-log-pdf-error-once "vi" c)
+      (values nil nil))))
+
+(defun vi-step (log-pdf-fn var-params n-params n-elbo-samples adam-state lr)
+  "Run one VI optimization step.
+Returns updated variational parameters, the ELBO for this step, and a success flag."
+  (let ((epsilons (sample-vi-epsilons n-params n-elbo-samples)))
+    (multiple-value-bind (neg-elbo grads)
+        (estimate-vi-gradient log-pdf-fn var-params n-params epsilons)
+      (if (and neg-elbo grads (every-finite-p grads))
+          (let* ((clipped-grads (clip-gradients grads))
+                 (updated-var-params
+                   (clamp-log-sigmas
+                    (opt:adam-step var-params clipped-grads adam-state :lr lr)
+                    n-params)))
+            (values updated-var-params
+                    (- (coerce neg-elbo 'double-float))
+                    t))
+          (values var-params nil nil)))))
+
+(defun extract-vi-results (var-params n-params)
+  "Extract final mean and scale parameters from VAR-PARAMS."
+  (let ((mu-list (mapcar (lambda (x) (coerce x 'double-float))
+                         (subseq var-params 0 n-params)))
+        (sigma-list (mapcar (lambda (x)
+                              (exp (coerce x 'double-float)))
+                            (subseq var-params n-params))))
+    (when (some (lambda (m) (not (finite-double-p m))) mu-list)
+      (warn "vi: Some mu values are non-finite. Results may be unreliable."))
+    (values mu-list sigma-list)))
+
 (defun vi (log-pdf-fn initial-params
            &key (n-iterations 1000) (n-elbo-samples 10) (lr 0.01d0))
   "Mean-field Automatic Differentiation Variational Inference (ADVI).
@@ -60,65 +122,18 @@ Returns (values mu-list sigma-list elbo-history diagnostics) where:
            (adam-state (opt:make-adam-state n-var-params))
            (elbo-history nil))
       (with-float-traps-masked
-      (dotimes (iter n-iterations)
-        ;; Draw epsilon samples OUTSIDE gradient computation (plain numbers)
-        (let ((epsilons (loop repeat n-elbo-samples
-                              collect (loop repeat n-params
-                                           collect (dist:normal-sample)))))
-          ;; Compute ELBO gradient w.r.t. variational parameters
-          (multiple-value-bind (neg-elbo grads)
-              (handler-case
-                  (with-float-traps-masked
-                    (ad:gradient
-                     (lambda (vp)
-                       (let* ((mus (subseq vp 0 n-params))
-                              (log-sigmas (nthcdr n-params vp))
-                              (total-log-p (ad:* 0.0d0 (first vp)))
-                              (total-entropy (ad:* 0.0d0 (first vp))))
-                         ;; Monte Carlo estimate of E_q[log p(z)]
-                         (dolist (eps epsilons)
-                           (let ((z (mapcar (lambda (mu ls e)
-                                              (ad:+ mu (ad:* (ad:exp ls) e)))
-                                            mus log-sigmas eps)))
-                             (setf total-log-p
-                                   (ad:+ total-log-p (funcall log-pdf-fn z)))))
-                         (let ((mean-log-p (ad:/ total-log-p
-                                                 (coerce n-elbo-samples
-                                                         'double-float))))
-                           ;; Entropy of factored Gaussian: sum(log_sigma_i)
-                           ;; Constant n/2*log(2*pi*e) does not affect gradients
-                           (dolist (ls log-sigmas)
-                             (setf total-entropy (ad:+ total-entropy ls)))
-                           ;; Negate ELBO for minimization
-                           (ad:- (ad:+ mean-log-p total-entropy)))))
-                     var-params))
-                (arithmetic-error () (values nil nil))
-                (error (c)
-                  (warn-log-pdf-error-once "vi" c)
-                  (values nil nil)))
-            ;; Skip iteration if gradient computation failed
-            (when (and neg-elbo grads (every-finite-p grads))
-              ;; Record ELBO (negate back since we computed -ELBO)
-              (push (- (coerce neg-elbo 'double-float)) elbo-history)
-              ;; Clip gradients to prevent g*g overflow in Adam's v computation
-              (let ((clipped-grads (clip-gradients grads)))
-                ;; Adam update
-                (setf var-params (opt:adam-step var-params clipped-grads adam-state
-                                               :lr lr)))
-              ;; Clamp log-sigma to prevent overflow on next iteration
-              (setf var-params (clamp-log-sigmas var-params n-params)))))))
-      ;; Warn if optimization never succeeded
+        (dotimes (iter n-iterations)
+          (declare (ignore iter))
+          (multiple-value-bind (updated-var-params elbo successp)
+              (vi-step log-pdf-fn var-params n-params n-elbo-samples adam-state lr)
+            (setf var-params updated-var-params)
+            (when successp
+              (push elbo elbo-history)))))
       (when (null elbo-history)
         (warn "vi: All ~D iterations produced non-finite gradients. ~
                Results may be meaningless." n-iterations))
-      ;; Extract final mu and sigma, with finiteness check on mu
-      (let ((mu-list (mapcar (lambda (x) (coerce x 'double-float))
-                             (subseq var-params 0 n-params)))
-            (sigma-list (mapcar (lambda (x)
-                                  (exp (coerce x 'double-float)))
-                                (subseq var-params n-params))))
-        (when (some (lambda (m) (not (finite-double-p m))) mu-list)
-          (warn "vi: Some mu values are non-finite. Results may be unreliable."))
+      (multiple-value-bind (mu-list sigma-list)
+          (extract-vi-results var-params n-params)
         (values mu-list sigma-list (nreverse elbo-history)
                 (make-final-diagnostics
                  :accept-rate 0.0d0
